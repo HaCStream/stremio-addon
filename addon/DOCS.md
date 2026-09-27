@@ -48,16 +48,16 @@ Set these options in the add-on's Configuration tab:
 
 | Option / environment variable | Value |
 | --- | --- |
-| `port` | Unused host TCP port, default `8000` |
-| `addon_url` | External HTTPS base URL of your reverse proxy |
-| `debug_enabled` | Enable the read-only debug dashboard (default `true`) |
-| `debug_port` | Separate dashboard port (default `8001`) |
-| `debug_host` | Dashboard listen address (default `0.0.0.0`) |
-| `api_key` | At least 32 random URL-safe characters |
-| `api_id` | Positive Telegram application ID |
-| `api_hash` | Telegram application hash |
-| `user_session_string` | Complete Telethon StringSession |
-| `cache_mb` | Optional cache limit in MiB, default `512` |
+| `PORT` | Unused host TCP port, default `8000` |
+| `ADDON_URL` | External HTTPS base URL of your reverse proxy |
+| `DEBUG_ENABLED` | Enable the read-only debug dashboard (default `true`) |
+| `DEBUG_PORT` | Separate dashboard port (default `8001`) |
+| `DEBUG_HOST` | Dashboard listen address (default `0.0.0.0`) |
+| `API_KEY` | At least 32 random URL-safe characters |
+| `API_ID` | Positive Telegram application ID |
+| `API_HASH` | Telegram application hash |
+| `USER_SESSION_STRING` | Complete Telethon StringSession |
+| `CACHE_MB` | Optional cache limit in MiB, default `512` |
 | `CHANNEL_IDS` | Optional comma-separated negative channel IDs; blank scans all joined private channels |
 
 For example, set `CHANNEL_IDS: "-1001234567890,-1009876543210"` and restart
@@ -65,11 +65,11 @@ the add-on. Only those joined private broadcast channels will be indexed.
 Existing catalog entries from excluded channels are removed on discovery;
 selecting them again restarts their history scan. Telegram posts are unchanged.
 
-The settings use their exact lowercase names. The application
+The settings use their exact uppercase names. The application
 reads them directly from Home Assistant's `/data/options.json`; the HA startup
 wrapper also exports them as environment variables. This makes both the generic
 repository image and the HA-specific image work under Supervisor. Explicit
-lowercase/uppercase environment variables take precedence when running the image
+uppercase environment variables take precedence when running the image
 outside Home Assistant.
 
 Generate the session on a trusted machine using the repository's
@@ -78,10 +78,10 @@ a Telethon StringSession. Startup validates the session format and reports a
 clear error without printing the value. Telegram authorization is then checked
 by the application.
 
-Host networking lets the configured `port` work without a fixed Docker port
+Host networking lets the configured `PORT` work without a fixed Docker port
 mapping. The server listens on all host interfaces, so choose a free port and
 configure your network accordingly. No Supervisor or Home Assistant API access
-is requested. Ingress is not used: Stremio needs a directly reachable endpoint.
+is requested. Stremio needs a directly reachable endpoint.
 
 Point your HTTPS reverse proxy at `http://HOME_ASSISTANT_IP:8000` (or your
 configured port). Forward byte-range requests and disable proxy caching and
@@ -91,17 +91,17 @@ access logs that expose credential-bearing URLs. Install in Stremio with:
 https://YOUR_DOMAIN/YOUR_API_KEY/manifest.json
 ```
 
-The protected `/<api_key>/status` endpoint shows Telegram indexing progress.
+The protected `/<your-api-key>/status` endpoint shows Telegram indexing progress.
 Optional AI search is configured with `AI_SEARCH_ENABLED`, `GEMINI_API_KEY`, and
 `AI_SEARCH_PREFIX_ENABLED` in the Configuration tab. Enabling it adds a separate
 Telegram AI Search catalog and starts background Gemini embedding calls. Prefix
 mode restricts query-time calls to searches beginning with `AI` or `ai`; it does
 not disable initial embedding calls. Titles and short caption excerpts are sent
 to Gemini. The debug dashboard shows semantic indexing progress.
-The debug dashboard is available directly on `debug_port`. Sign in with the
+The debug dashboard is available directly on `DEBUG_PORT`. Sign in with the
 configured API key to inspect channels, indexing progress, recent searches, and
 read-only search results. It does not expose playback URLs and does not use
-`addon_url` for its own requests.
+`ADDON_URL` for its own requests.
 The add-on page's **Open Web UI** button opens the dashboard on its standard
 port. Use **Sync now** in the dashboard after joining a channel or adding a video
 to trigger channel discovery and catch-up indexing immediately.

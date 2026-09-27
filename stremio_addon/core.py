@@ -73,24 +73,20 @@ class Settings:
             # direct fallback even when the generic image is pulled by Supervisor.
             value = os.getenv(name)
             if value is None or not str(value).strip():
-                value = os.getenv(name.upper())
-            if value is None or not str(value).strip():
-                value = options.get(name, default)
+                value = options.get(name, options.get(name.lower(), default))
             if value is None or not str(value).strip():
                 raise ValueError(f'Missing environment variable: {name}')
             return str(value)
 
-        url = get('addon_url').rstrip('/')
+        url = get('ADDON_URL').rstrip('/')
         parsed = urlparse(url)
         if parsed.scheme not in ('http', 'https') or not parsed.netloc or parsed.query or parsed.fragment or parsed.username:
-            raise ValueError('addon_url must be an HTTP(S) base URL without credentials, query or fragment')
-        key = get('api_key')
+            raise ValueError('ADDON_URL must be an HTTP(S) base URL without credentials, query or fragment')
+        key = get('API_KEY')
         if not re.fullmatch(r'[A-Za-z0-9_-]{32,}', key):
-            raise ValueError('api_key needs at least 32 URL-safe letters, digits, underscores or hyphens')
+            raise ValueError('API_KEY needs at least 32 URL-safe letters, digits, underscores or hyphens')
         default_data = '/data/stremio' if options_path.is_file() else '/data'
         raw_ids = os.getenv('CHANNEL_IDS')
-        if raw_ids is None:
-            raw_ids = os.getenv('channel_ids')
         if raw_ids is None:
             raw_ids = options.get('CHANNEL_IDS', options.get('channel_ids', ''))
         channel_ids = None
@@ -101,12 +97,12 @@ class Settings:
             if any(not re.fullmatch(r'-[1-9][0-9]*', part) for part in parts):
                 raise ValueError('CHANNEL_IDS must contain only comma-separated negative channel IDs')
             channel_ids = frozenset(int(part) for part in parts)
-        port = int(get('port', '8000'))
-        debug_port = int(get('debug_port', '8001'))
-        debug_host = get('debug_host', '0.0.0.0')
-        raw_debug_enabled = get('debug_enabled', 'true').lower()
+        port = int(get('PORT', '8000'))
+        debug_port = int(get('DEBUG_PORT', '8001'))
+        debug_host = get('DEBUG_HOST', '0.0.0.0')
+        raw_debug_enabled = get('DEBUG_ENABLED', 'true').lower()
         if raw_debug_enabled not in ('1', 'true', 'yes', 'on', '0', 'false', 'no', 'off'):
-            raise ValueError('debug_enabled must be true or false')
+            raise ValueError('DEBUG_ENABLED must be true or false')
         debug_enabled = raw_debug_enabled in ('1', 'true', 'yes', 'on')
         def boolean(name):
             value = get(name, 'false').lower()
@@ -115,15 +111,15 @@ class Settings:
             return value in ('1', 'true', 'yes', 'on')
         ai_enabled = boolean('AI_SEARCH_ENABLED')
         ai_prefix = boolean('AI_SEARCH_PREFIX_ENABLED')
-        gemini_key = str(os.getenv('GEMINI_API_KEY') or options.get('GEMINI_API_KEY') or '').strip() if ai_enabled else ''
+        gemini_key = get('GEMINI_API_KEY') if ai_enabled else ''
         if ai_enabled and not gemini_key:
             raise ValueError('GEMINI_API_KEY is required when AI_SEARCH_ENABLED is true')
         if debug_enabled and debug_port == port:
-            raise ValueError('debug_port must differ from port')
+            raise ValueError('DEBUG_PORT must differ from PORT')
         if not 1 <= debug_port <= 65535:
-            raise ValueError('debug_port must be between 1 and 65535')
-        return cls(port, url, key, int(get('api_id')), get('api_hash'), get('user_session_string'),
-                   Path(get('data_dir', default_data)), int(get('cache_mb', '512')) * 1024**2,
+            raise ValueError('DEBUG_PORT must be between 1 and 65535')
+        return cls(port, url, key, int(get('API_ID')), get('API_HASH'), get('USER_SESSION_STRING'),
+                   Path(get('DATA_DIR', default_data)), int(get('CACHE_MB', '512')) * 1024**2,
                    channel_ids, debug_port, debug_host, debug_enabled, ai_enabled, gemini_key, ai_prefix)
 
 

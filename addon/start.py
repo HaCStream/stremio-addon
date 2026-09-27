@@ -5,19 +5,20 @@ import sys
 from pathlib import Path
 
 FIELDS = (
-    "port", "addon_url", "api_key", "api_id", "api_hash",
-    "user_session_string", "cache_mb", "CHANNEL_IDS", "debug_port",
-    "debug_host", "debug_enabled", "AI_SEARCH_ENABLED", "GEMINI_API_KEY",
+    "PORT", "ADDON_URL", "API_KEY", "API_ID", "API_HASH",
+    "USER_SESSION_STRING", "CACHE_MB", "CHANNEL_IDS", "DEBUG_PORT",
+    "DEBUG_HOST", "DEBUG_ENABLED", "AI_SEARCH_ENABLED", "GEMINI_API_KEY",
     "AI_SEARCH_PREFIX_ENABLED",
 )
 
 
 def configure(options, environ):
     for name in FIELDS:
-        if name in options:
-            environ[name] = str(options[name])
+        value = options.get(name, options.get(name.lower()))
+        if value is not None and name not in environ:
+            environ[name] = str(value)
     # Supervisor owns /data/options.json; keep app files in their own directory.
-    environ["data_dir"] = "/data/stremio"
+    environ["DATA_DIR"] = "/data/stremio"
 
 
 def main():

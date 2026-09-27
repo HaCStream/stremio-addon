@@ -60,23 +60,23 @@ Set these values in `.env` for Docker Compose. In Home Assistant, enter the corr
 
 | Environment variable | Description | Mandatory | Default | Example |
 | --- | --- | :---: | --- | --- |
-| `addon_url` | Base URL reachable by Stremio; use HTTPS for deployment. May include a path prefix, but no credentials, query, or fragment. | `true` | — | `https://telegram.example.com` |
-| `api_key` | Access key with at least 32 characters: letters, digits, underscores, or hyphens. Generate a unique value. | `true` | — | Generate with the command below |
-| `api_id` | Positive Telegram application ID. | `true` | — | `123456` |
-| `api_hash` | Telegram application hash. | `true` | — | `YOUR_TELEGRAM_API_HASH` |
-| `user_session_string` | Complete authorized Telethon StringSession from the session generator. | `true` | — | `YOUR_TELETHON_STRING_SESSION` |
-| `port` | Main application listener port. | `false` | `8000` | `8000` |
-| `debug_enabled` | Enable the separate debug dashboard. | `false` | `true` | `false` |
-| `debug_port` | Dashboard port; must differ from `port` when enabled. | `false` | `8001` | `8001` |
-| `debug_host` | Dashboard bind address. Keep the default for Docker port forwarding. | `false` | `0.0.0.0` | `0.0.0.0` |
-| `cache_mb` | Disk chunk-cache limit in MiB; `0` disables new cache writes. | `false` | `512` | `1024` |
+| `ADDON_URL` | Base URL reachable by Stremio; use HTTPS for deployment. May include a path prefix, but no credentials, query, or fragment. | `true` | — | `https://telegram.example.com` |
+| `API_KEY` | Access key with at least 32 characters: letters, digits, underscores, or hyphens. Generate a unique value. | `true` | — | Generate with the command below |
+| `API_ID` | Positive Telegram application ID. | `true` | — | `123456` |
+| `API_HASH` | Telegram application hash. | `true` | — | `YOUR_TELEGRAM_API_HASH` |
+| `USER_SESSION_STRING` | Complete authorized Telethon StringSession from the session generator. | `true` | — | `YOUR_TELETHON_STRING_SESSION` |
+| `PORT` | Main application listener port. | `false` | `8000` | `8000` |
+| `DEBUG_ENABLED` | Enable the separate debug dashboard. | `false` | `true` | `false` |
+| `DEBUG_PORT` | Dashboard port; must differ from `PORT` when enabled. | `false` | `8001` | `8001` |
+| `DEBUG_HOST` | Dashboard bind address. Keep the default for Docker port forwarding. | `false` | `0.0.0.0` | `0.0.0.0` |
+| `CACHE_MB` | Disk chunk-cache limit in MiB; `0` disables new cache writes. | `false` | `512` | `1024` |
 | `CHANNEL_IDS` | Comma-separated negative IDs limiting which joined private broadcast channels are indexed. Blank selects all eligible channels. | `false` | Empty | `-1001234567890,-1009876543210` |
 | `AI_SEARCH_ENABLED` | Adds the separate **Telegram AI Search** catalog and builds a semantic index in the background. | `false` | `false` | `true` |
 | `GEMINI_API_KEY` | Gemini API credential; required only when AI search is enabled. | Conditional | Empty | `YOUR_GEMINI_API_KEY` |
 | `AI_SEARCH_PREFIX_ENABLED` | Require a leading `AI` word (case insensitive) for searches in the AI catalog. | `false` | `false` | `true` |
-| `data_dir` | Persistent index and cache directory. Home Assistant manages this automatically; it is not a UI option. | `false` | `/data` standalone; `/data/stremio` in Home Assistant | `/data` |
+| `DATA_DIR` | Persistent index and cache directory. Home Assistant manages this automatically; it is not a UI option. | `false` | `/data` standalone; `/data/stremio` in Home Assistant | `/data` |
 
-Use the variable names shown above. The application also accepts uppercase equivalents for lowercase settings, with nonempty lowercase values taking precedence. `CHANNEL_IDS` takes precedence over its lowercase alias. The supplied Compose port mappings use lowercase `port` and `debug_port`.
+Use the variable names shown above. Set all environment variables in uppercase. Existing lowercase Home Assistant options remain readable during upgrades.
 
 ### 🎯 Selecting channels
 
@@ -122,7 +122,7 @@ pip install -r requirements.txt
 python generate_session.py
 ```
 
-Enter your API credentials, phone number, Telegram login code, and two-step verification password if requested. Save the generated value as `user_session_string`.
+Enter your API credentials, phone number, Telegram login code, and two-step verification password if requested. Save the generated value as `USER_SESSION_STRING`.
 
 ### 3. Generate an addon access key
 
@@ -130,7 +130,7 @@ Enter your API credentials, phone number, Telegram login code, and two-step veri
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Save the output as `api_key`.
+Save the output as `API_KEY`.
 
 > 🔐 Keep the session string, API key, and installation URL private. Use a dedicated session for this addon and run only one instance with that session.
 
@@ -151,17 +151,17 @@ On Windows PowerShell, use `Copy-Item .env.example .env`.
 Edit `.env` and replace the placeholders:
 
 ```dotenv
-port=8000
-addon_url=https://telegram.example.com
-api_key=REPLACE_WITH_YOUR_GENERATED_ACCESS_KEY
-api_id=123456
-api_hash=YOUR_TELEGRAM_API_HASH
-user_session_string=YOUR_TELETHON_STRING_SESSION
+PORT=8000
+ADDON_URL=https://telegram.example.com
+API_KEY=REPLACE_WITH_YOUR_GENERATED_ACCESS_KEY
+API_ID=123456
+API_HASH=YOUR_TELEGRAM_API_HASH
+USER_SESSION_STRING=YOUR_TELETHON_STRING_SESSION
 
-debug_enabled=true
-debug_port=8001
-debug_host=0.0.0.0
-cache_mb=512
+DEBUG_ENABLED=true
+DEBUG_PORT=8001
+DEBUG_HOST=0.0.0.0
+CACHE_MB=512
 # CHANNEL_IDS=-1001234567890,-1009876543210
 ```
 
@@ -175,8 +175,8 @@ services:
     build: .
     env_file: .env
     ports:
-      - "127.0.0.1:${port:-8000}:${port:-8000}"
-      - "127.0.0.1:${debug_port:-8001}:${debug_port:-8001}"
+      - "127.0.0.1:${PORT:-8000}:${PORT:-8000}"
+      - "127.0.0.1:${DEBUG_PORT:-8001}:${DEBUG_PORT:-8001}"
     volumes:
       - telegram-data:/data
     restart: unless-stopped
@@ -208,7 +208,7 @@ telegram.example.com {
 }
 ```
 
-Point the domain's DNS to your server and make ports 80 and 443 reachable by Caddy. Set `addon_url` to the matching HTTPS base URL.
+Point the domain's DNS to your server and make ports 80 and 443 reachable by Caddy. Set `ADDON_URL` to the matching HTTPS base URL.
 
 Preserve Range headers, allow long streaming requests, and disable proxy caching and response buffering. Avoid access logs containing the full credential-bearing URL. If using a URL prefix, strip that prefix before forwarding to the application.
 
@@ -262,16 +262,16 @@ Open the add-on's **Configuration** tab. Enter the credentials from [Prepare you
 Example YAML configuration:
 
 ```yaml
-port: 8000
-addon_url: "https://telegram.example.com"
-api_key: "REPLACE_WITH_YOUR_GENERATED_ACCESS_KEY"
-api_id: 123456
-api_hash: "YOUR_TELEGRAM_API_HASH"
-user_session_string: "YOUR_TELETHON_STRING_SESSION"
-debug_enabled: true
-debug_port: 8001
-debug_host: "0.0.0.0"
-cache_mb: 512
+PORT: 8000
+ADDON_URL: "https://telegram.example.com"
+API_KEY: "REPLACE_WITH_YOUR_GENERATED_ACCESS_KEY"
+API_ID: 123456
+API_HASH: "YOUR_TELEGRAM_API_HASH"
+USER_SESSION_STRING: "YOUR_TELETHON_STRING_SESSION"
+DEBUG_ENABLED: true
+DEBUG_PORT: 8001
+DEBUG_HOST: "0.0.0.0"
+CACHE_MB: 512
 CHANNEL_IDS: ""
 ```
 
@@ -297,13 +297,13 @@ https://telegram.example.com/YOUR_API_KEY/manifest.json
 
 ### 5. Open the dashboard
 
-With `debug_enabled: true`, select **Open Web UI** on the add-on page and sign in with your `api_key`.
+With `DEBUG_ENABLED: true`, select **Open Web UI** on the add-on page and sign in with your `API_KEY`.
 
-The button currently targets port **8001**. If you change `debug_port`, open `http://HOME_ASSISTANT_IP:YOUR_DEBUG_PORT` directly.
+The button currently targets port **8001**. If you change `DEBUG_PORT`, open `http://HOME_ASSISTANT_IP:YOUR_DEBUG_PORT` directly.
 
 ## 🧰 Debug dashboard
 
-The dashboard runs on its own listener and works independently of `addon_url`.
+The dashboard runs on its own listener and works independently of `ADDON_URL`.
 
 | Installation | Default dashboard address |
 | --- | --- |
