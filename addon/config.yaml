@@ -19,9 +19,6 @@ ports:
   8001/tcp: 8001
 timeout: 30
 options:
-  debug:
-    DEBUG_ENABLED: true
-    DEBUG_HOST: "0.0.0.0"
   ADDON_URL: ""
   API_KEY: ""
   API_ID: 0
@@ -48,3 +45,6 @@ schema:
     AI_SEARCH_ENABLED: bool
     GEMINI_API_KEY: password?
     AI_SEARCH_PREFIX_ENABLED: bool
+  debug:
+    DEBUG_ENABLED: false
+    DEBUG_HOST: "0.0.0.0"
