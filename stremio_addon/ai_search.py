@@ -12,8 +12,8 @@ import httpx
 
 from .core import normalize
 
-EMBED_MODEL = 'gemini-embedding-001'
-GENERATE_MODEL = 'gemini-2.5-flash-lite'
+EMBED_MODEL = 'gemini-embedding-2'
+GENERATE_MODEL = 'gemini-3.8-flash'
 DIMENSIONS = 768
 API = 'https://generativelanguage.googleapis.com/v1beta/models/'
 
