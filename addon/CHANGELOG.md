@@ -1,5 +1,15 @@
 # Changelog
 
+<!-- release:1.4.1:start -->
+## 1.4.1
+
+## What's Changed
+* Fix Home Assistant schema and validate it in CI by @hilayc in https://github.com/hilayc/stremio-addon/pull/9
+
+
+**Full Changelog**: https://github.com/hilayc/stremio-addon/compare/v1.4.0...v1.4.1
+<!-- release:1.4.1:end -->
+
 <!-- release:1.4.0:start -->
 ## 1.4.0
 
