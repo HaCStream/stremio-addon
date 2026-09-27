@@ -61,17 +61,21 @@ class AISearch:
         data = await self.request(GENERATE_MODEL, 'generateContent', {
             'contents': [{'parts': [{'text': prompt}]}],
             'generationConfig': {'responseMimeType': 'application/json', 'temperature': 0.1,
-                                 'maxOutputTokens': 1024, 'thinkingConfig': {'thinkingBudget': 0}},
+                                 'maxOutputTokens': 1024, 'thinkingConfig': {'thinkingLevel': 'low'}},
         })
         parts = data['candidates'][0]['content']['parts']
         return json.loads(''.join(p.get('text', '') for p in parts))
 
     async def embed(self, text, task, title=None):
+        if task == 'RETRIEVAL_QUERY':
+            text = 'task: search result | query: ' + text
+        elif task == 'RETRIEVAL_DOCUMENT':
+            text = 'title: ' + (title[:200] if title else 'none') + ' | text: ' + text
+        else:
+            raise ValueError('Unsupported embedding task')
         body = {'model': 'models/' + EMBED_MODEL,
                 'content': {'parts': [{'text': text}]},
-                'taskType': task, 'outputDimensionality': DIMENSIONS}
-        if title and task == 'RETRIEVAL_DOCUMENT':
-            body['title'] = title[:200]
+                'outputDimensionality': DIMENSIONS}
         data = await self.request(EMBED_MODEL, 'embedContent', body)
         values = data['embedding']['values']
         if len(values) != DIMENSIONS:

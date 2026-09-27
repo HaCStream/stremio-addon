@@ -5,7 +5,7 @@ from urllib.parse import quote
 import pytest
 from fastapi.testclient import TestClient
 
-from stremio_addon.ai_search import AISearch, DIMENSIONS, ai_query
+from stremio_addon.ai_search import AISearch, DIMENSIONS, EMBED_MODEL, GENERATE_MODEL, ai_query
 from stremio_addon.app import create_app_with_runtime
 from stremio_addon.core import Settings, Store
 from stremio_addon.runtime import Runtime
@@ -128,7 +128,7 @@ async def test_semantic_lookup_without_shared_words(tmp_path):
                          ('groundhog day:1993', 'A person repeats the same day.'))
         store.db.execute('INSERT INTO ai_embeddings VALUES (?,?,?,?)',
                          ('tg:-100:1', ai.fingerprint(store.get('tg:-100:1')),
-                          'gemini-embedding-001', (await embed('', '')).tobytes()))
+                          EMBED_MODEL, (await embed('', '')).tobytes()))
     assert not store.catalog('someone relives today')
     found = await ai.search('someone relives today', {-100})
     assert [r['id'] for r in found] == ['tg:-100:1']
@@ -155,3 +155,33 @@ def test_ai_settings_from_environment(tmp_path, monkeypatch):
     monkeypatch.setenv('AI_SEARCH_PREFIX_ENABLED', 'maybe')
     with pytest.raises(ValueError, match='AI_SEARCH_PREFIX_ENABLED'):
         Settings.env()
+
+@pytest.mark.asyncio
+async def test_gemini_2_payloads(tmp_path):
+    store = Store(tmp_path / 'index.sqlite3')
+    ai = AISearch(config(tmp_path), store)
+    requests = []
+
+    async def request(model, action, body):
+        requests.append((model, action, body))
+        if action == 'embedContent':
+            return {'embedding': {'values': [1.] + [0.] * (DIMENSIONS - 1)}}
+        return {'candidates': [{'content': {'parts': [{'text': '{"titles": []}'}]}}]}
+
+    ai.request = request
+    await ai.embed('a time loop', 'RETRIEVAL_QUERY')
+    await ai.embed('A repeated day', 'RETRIEVAL_DOCUMENT', 'Groundhog Day')
+    await ai.generate('suggest titles')
+    query = requests[0][2]
+    document = requests[1][2]
+    generation = requests[2][2]
+    assert requests[0][:2] == (EMBED_MODEL, 'embedContent')
+    assert query['content']['parts'][0]['text'] == 'task: search result | query: a time loop'
+    assert document['content']['parts'][0]['text'] == 'title: Groundhog Day | text: A repeated day'
+    assert query['outputDimensionality'] == document['outputDimensionality'] == DIMENSIONS
+    assert 'taskType' not in query and 'taskType' not in document
+    assert 'title' not in document
+    assert requests[2][:2] == (GENERATE_MODEL, 'generateContent')
+    assert generation['generationConfig']['thinkingConfig'] == {'thinkingLevel': 'low'}
+    await ai.close()
+    store.db.close()
