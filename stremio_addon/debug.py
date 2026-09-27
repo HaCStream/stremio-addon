@@ -9,7 +9,6 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from .core import normalize
-from .ai_search import ai_query
 from .version import get_version
 
 
@@ -144,8 +143,12 @@ def create_debug_app(runtime):
         allowed = set(shared.tg.channels)
         aliases, resolved_year = [], None
         if mode == 'ai':
-            clean = ai_query(q, shared.cfg.ai_search_prefix_enabled)
-            if not shared.ai or not clean:
+            if not shared.ai:
+                raise HTTPException(409, 'AI features are not enabled')
+            # The dedicated debug form explicitly selects AI, even when the
+            # Stremio catalog requires a prefix for automatic routing.
+            clean = q.strip()
+            if not clean:
                 matched = []
             else:
                 try:
