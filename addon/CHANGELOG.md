@@ -1,5 +1,15 @@
 # Changelog
 
+<!-- release:1.4.3:start -->
+## 1.4.3
+
+## What's Changed
+* Back off Gemini requests after HTTP 429 by @hilayc in https://github.com/hilayc/stremio-addon/pull/12
+
+
+**Full Changelog**: https://github.com/hilayc/stremio-addon/compare/v1.4.2...v1.4.3
+<!-- release:1.4.3:end -->
+
 <!-- release:1.4.2:start -->
 ## 1.4.2
 
