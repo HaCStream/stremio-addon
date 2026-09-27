@@ -1,5 +1,16 @@
 # Changelog
 
+<!-- release:1.4.0:start -->
+## 1.4.0
+
+## What's Changed
+* Add separate Gemini AI search catalog by @hilayc in https://github.com/hilayc/stremio-addon/pull/7
+* Use uppercase environment variables in container and Home Assistant add-on by @hilayc in https://github.com/hilayc/stremio-addon/pull/8
+
+
+**Full Changelog**: https://github.com/hilayc/stremio-addon/compare/v1.3.1...v1.4.0
+<!-- release:1.4.0:end -->
+
 <!-- release:1.3.1:start -->
 ## 1.3.1
 
