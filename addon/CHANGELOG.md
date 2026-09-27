@@ -1,5 +1,16 @@
 # Changelog
 
+<!-- release:1.4.2:start -->
+## 1.4.2
+
+## What's Changed
+* Restore Home Assistant add-on logs by @hilayc in https://github.com/hilayc/stremio-addon/pull/10
+* Add AI search controls and status to debug dashboard by @hilayc in https://github.com/hilayc/stremio-addon/pull/11
+
+
+**Full Changelog**: https://github.com/hilayc/stremio-addon/compare/v1.4.1...v1.4.2
+<!-- release:1.4.2:end -->
+
 <!-- release:1.4.1:start -->
 ## 1.4.1
 
