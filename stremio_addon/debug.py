@@ -107,7 +107,7 @@ def create_debug_app(runtime):
             'cache_mb': shared.cfg.cache_bytes // 1024**2,
             'ai_search_enabled': shared.cfg.ai_search_enabled,
             'ai_search_prefix_enabled': shared.cfg.ai_search_prefix_enabled,
-            'ai_index': dict(shared.ai.status) if shared.ai else None,
+            'ai_index': shared.ai.snapshot() if shared.ai else None,
         }
 
     @app.get('/api/channels')

@@ -90,6 +90,8 @@ Set `AI_SEARCH_ENABLED=true` and provide `GEMINI_API_KEY` to add a separate **Te
 
 AI search generates and stores embeddings for indexed titles, filenames, and caption excerpts. For entries without a meaningful caption, it may ask Gemini for a short description when the title can be identified confidently. This background indexing uses Gemini even if prefix mode is enabled. Search queries also use Gemini to retrieve and rank indexed entries. Only indexed entries in currently selected channels can be returned. Titles and caption excerpts are sent to Gemini; Telegram credentials, channel IDs, playback URLs, and video bytes are not. The debug dashboard displays indexing progress. New and edited entries are indexed incrementally, and search works with already processed entries while the initial index fills.
 
+If Gemini returns HTTP 429, the add-on pauses all Gemini requests with a saved, increasing cooldown that survives restarts. During that pause, the AI catalog falls back to local text matches. The debug dashboard shows the retry countdown. If 429s continue after the cooldown, check your project's model quotas in Google AI Studio.
+
 ## 🔑 Prepare your credentials
 
 Complete this once before either installation method.

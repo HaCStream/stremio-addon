@@ -185,3 +185,68 @@ async def test_gemini_2_payloads(tmp_path):
     assert generation['generationConfig']['thinkingConfig'] == {'thinkingLevel': 'low'}
     await ai.close()
     store.db.close()
+
+@pytest.mark.asyncio
+async def test_429_pauses_all_requests_and_survives_restart(tmp_path, monkeypatch):
+    import httpx
+    import stremio_addon.ai_search as module
+    monkeypatch.setattr(module, 'MIN_REQUEST_INTERVAL', 0)
+    store = Store(tmp_path / 'index.sqlite3')
+    calls = []
+
+    def respond(request):
+        calls.append(request.url.path)
+        if len(calls) == 1:
+            return httpx.Response(429, headers={'Retry-After': '120'}, json={
+                'error': {'details': [{'retryDelay': '90s'}]}})
+        return httpx.Response(200, json={'ok': True})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
+        ai = AISearch(config(tmp_path), store, http)
+        with pytest.raises(module.GeminiCooldown):
+            await ai.request(EMBED_MODEL, 'embedContent', {})
+        assert ai.snapshot()['retry_after_seconds'] >= 119
+        with pytest.raises(module.GeminiCooldown):
+            await ai.request(GENERATE_MODEL, 'generateContent', {})
+        assert len(calls) == 1
+        await ai.close()
+
+        restarted = AISearch(config(tmp_path), store, http)
+        with pytest.raises(module.GeminiCooldown):
+            await restarted.request(EMBED_MODEL, 'embedContent', {})
+        assert len(calls) == 1
+        restarted.retry_at = 0  # Simulate expiry without waiting two minutes.
+        assert await restarted.request(EMBED_MODEL, 'embedContent', {}) == {'ok': True}
+        assert restarted.strikes == 0
+        assert restarted.snapshot()['retry_after_seconds'] == 0
+        await restarted.close()
+    store.db.close()
+
+
+@pytest.mark.asyncio
+async def test_indexer_stops_after_first_429(tmp_path, monkeypatch):
+    import asyncio
+    import httpx
+    import stremio_addon.ai_search as module
+    monkeypatch.setattr(module, 'MIN_REQUEST_INTERVAL', 0)
+    store = Store(tmp_path / 'index.sqlite3')
+    store.upsert(item())
+    store.upsert(item('tg:-100:2', title='Another title'))
+    calls = []
+
+    def respond(request):
+        calls.append(request.url.path)
+        return httpx.Response(429, headers={'Retry-After': '180'})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
+        ai = AISearch(config(tmp_path), store, http)
+        await ai.start()
+        for _ in range(20):
+            if calls:
+                break
+            await asyncio.sleep(.01)
+        await asyncio.sleep(.05)
+        assert len(calls) == 1
+        assert ai.snapshot()['retry_after_seconds'] >= 179
+        await ai.close()
+    store.db.close()
