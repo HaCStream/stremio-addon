@@ -30,10 +30,10 @@ options:
     AI_SEARCH_ENABLED: false
     GEMINI_API_KEY: ""
     AI_SEARCH_PREFIX_ENABLED: false
-schema:
   debug:
-    DEBUG_ENABLED: bool
-    DEBUG_HOST: str
+    DEBUG_ENABLED: false
+    DEBUG_HOST: "0.0.0.0"
+schema:
   ADDON_URL: url
   API_KEY: password
   API_ID: int(1,)
@@ -46,5 +46,5 @@ schema:
     GEMINI_API_KEY: password?
     AI_SEARCH_PREFIX_ENABLED: bool
   debug:
-    DEBUG_ENABLED: false
-    DEBUG_HOST: "0.0.0.0"
+    DEBUG_ENABLED: bool
+    DEBUG_HOST: str
