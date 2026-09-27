@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import json
 from urllib.parse import quote
 import pytest
 from fastapi.testclient import TestClient
@@ -154,7 +155,7 @@ def test_home_assistant_options_fallback(tmp_path, monkeypatch):
                  'port', 'addon_url', 'api_key', 'api_id', 'api_hash', 'user_session_string', 'cache_mb'):
         monkeypatch.delenv(name, raising=False)
     settings = core.Settings.env()
-    assert settings.port == 9123
+    assert settings.port == 8000
     assert settings.url == 'https://telegram.example.com'
     assert settings.api_id == 12345
     assert settings.cache_bytes == 42 * 1024**2
@@ -174,6 +175,30 @@ def test_environment_overrides_home_assistant_options(tmp_path, monkeypatch):
     monkeypatch.setenv('API_HASH', 'hash')
     monkeypatch.setenv('USER_SESSION_STRING', 'session')
     assert core.Settings.env().url == 'https://environment.example.com'
+
+
+def test_nested_home_assistant_debug_and_ai_options(tmp_path, monkeypatch):
+    import stremio_addon.core as core
+    options = tmp_path / 'options.json'
+    options.write_text(json.dumps({
+        'ADDON_URL': 'https://ha.example.com', 'API_KEY': 'a' * 32,
+        'API_ID': 123, 'API_HASH': 'hash', 'USER_SESSION_STRING': 'session',
+        'debug': {'DEBUG_ENABLED': False},
+        'ai': {'AI_SEARCH_ENABLED': True, 'GEMINI_API_KEY': 'secret',
+               'AI_SEARCH_PREFIX_ENABLED': True},
+    }))
+    real_path = core.Path
+    monkeypatch.setattr(core, 'Path', lambda value: options if value == '/data/options.json' else real_path(value))
+    for name in ('ADDON_URL', 'API_KEY', 'API_ID', 'API_HASH', 'USER_SESSION_STRING',
+                 'DEBUG_ENABLED', 'DEBUG_PORT', 'AI_SEARCH_ENABLED', 'GEMINI_API_KEY',
+                 'AI_SEARCH_PREFIX_ENABLED'):
+        monkeypatch.delenv(name, raising=False)
+    settings = core.Settings.env()
+    assert not settings.debug_enabled
+    assert settings.debug_port == 8001
+    assert settings.ai_search_enabled
+    assert settings.ai_search_prefix_enabled
+    assert settings.gemini_api_key == 'secret'
 
 
 def test_legacy_home_assistant_options_remain_readable(tmp_path, monkeypatch):
@@ -199,15 +224,15 @@ def test_lowercase_container_environment_is_ignored(monkeypatch):
         core.Settings.env()
 
 
-def test_debug_port_must_be_separate(monkeypatch):
+def test_legacy_port_options_and_environment_cannot_change_listeners(monkeypatch):
     import stremio_addon.core as core
     monkeypatch.setattr(core.Path, 'is_file', lambda self: False)
     for name, value in dict(PORT='8000', DEBUG_PORT='8000', ADDON_URL='https://example.com',
                             API_KEY='a' * 32, API_ID='1', API_HASH='hash',
                             USER_SESSION_STRING='session').items():
         monkeypatch.setenv(name, value)
-    with pytest.raises(ValueError, match='DEBUG_PORT'):
-        Settings.env()
+    settings = Settings.env()
+    assert (settings.port, settings.debug_port) == (8000, 8001)
 
 
 class FakeTelegram:

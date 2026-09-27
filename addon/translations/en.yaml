@@ -1,0 +1,55 @@
+configuration:
+  ADDON_URL:
+    name: Addon URL
+    description: >-
+      Public HTTP or HTTPS base URL used for addon links. Include the scheme and domain,
+      without a trailing slash or API key.
+  API_KEY:
+    name: Addon API key
+    description: >-
+      Secret with at least 32 URL-safe characters used to protect addon and dashboard requests.
+  API_ID:
+    name: Telegram API ID
+    description: Numeric application ID obtained from Telegram.
+  API_HASH:
+    name: Telegram API hash
+    description: Secret application hash paired with the Telegram API ID.
+  USER_SESSION_STRING:
+    name: Telegram session string
+    description: Complete Telethon StringSession for the Telegram account to index.
+  CACHE_MB:
+    name: Cache limit (MiB)
+    description: Maximum disk space for cached video chunks in MiB; zero disables the cache.
+  CHANNEL_IDS:
+    name: Channel IDs
+    description: >-
+      Optional comma-separated negative Telegram channel IDs. Leave blank to scan all
+      joined private broadcast channels.
+  ai:
+    name: AI search
+    description: Configure optional Gemini-powered semantic search.
+    fields:
+      AI_SEARCH_ENABLED:
+        name: Enable AI search
+        description: Index titles for semantic search and show the Telegram AI Search catalog.
+      GEMINI_API_KEY:
+        name: Gemini API key
+        description: Gemini key used to generate embeddings for indexed titles and search queries.
+      AI_SEARCH_PREFIX_ENABLED:
+        name: Require AI search prefix
+        description: >-
+          Only send search queries to Gemini when they begin with AI or ai. Initial
+          indexing still sends titles and short caption excerpts to Gemini.
+  debug:
+    name: Debug dashboard
+    description: Configure the dashboard for inspecting indexing and search activity.
+    fields:
+      DEBUG_ENABLED:
+        name: Enable debug dashboard
+        description: Allow access to the dashboard and its search and sync tools.
+      DEBUG_HOST:
+        name: Debug listen address
+        description: Address the dashboard binds to. Use 0.0.0.0 for access through the network.
+network:
+  8000/tcp: Stremio addon endpoint.
+  8001/tcp: Debug dashboard endpoint.

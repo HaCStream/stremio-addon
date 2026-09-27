@@ -26,11 +26,20 @@ def validate(config):
     if not isinstance(options, dict) or not isinstance(schema, dict):
         return errors + ["options and schema must be mappings"]
 
-    for name, kind in schema.items():
-        if not isinstance(kind, str) or not TYPE.fullmatch(kind.removesuffix("?")):
-            errors.append(f"schema.{name}: unsupported Home Assistant type {kind!r}")
-    for name in options.keys() - schema.keys():
-        errors.append(f"options.{name}: missing schema entry")
+    def check(option_group, schema_group, prefix=""):
+        for name, kind in schema_group.items():
+            path = f"{prefix}{name}"
+            if isinstance(kind, dict):
+                if not isinstance(option_group.get(name), dict):
+                    errors.append(f"options.{path}: expected a mapping")
+                else:
+                    check(option_group[name], kind, path + ".")
+            elif not isinstance(kind, str) or not TYPE.fullmatch(kind.removesuffix("?")):
+                errors.append(f"schema.{path}: unsupported Home Assistant type {kind!r}")
+        for name in option_group.keys() - schema_group.keys():
+            errors.append(f"options.{prefix}{name}: missing schema entry")
+
+    check(options, schema)
     return errors
 
 

@@ -65,9 +65,7 @@ Set these values in `.env` for Docker Compose. In Home Assistant, enter the corr
 | `API_ID` | Positive Telegram application ID. | `true` | — | `123456` |
 | `API_HASH` | Telegram application hash. | `true` | — | `YOUR_TELEGRAM_API_HASH` |
 | `USER_SESSION_STRING` | Complete authorized Telethon StringSession from the session generator. | `true` | — | `YOUR_TELETHON_STRING_SESSION` |
-| `PORT` | Main application listener port. | `false` | `8000` | `8000` |
 | `DEBUG_ENABLED` | Enable the separate debug dashboard. | `false` | `true` | `false` |
-| `DEBUG_PORT` | Dashboard port; must differ from `PORT` when enabled. | `false` | `8001` | `8001` |
 | `DEBUG_HOST` | Dashboard bind address. Keep the default for Docker port forwarding. | `false` | `0.0.0.0` | `0.0.0.0` |
 | `CACHE_MB` | Disk chunk-cache limit in MiB; `0` disables new cache writes. | `false` | `512` | `1024` |
 | `CHANNEL_IDS` | Comma-separated negative IDs limiting which joined private broadcast channels are indexed. Blank selects all eligible channels. | `false` | Empty | `-1001234567890,-1009876543210` |
@@ -153,7 +151,6 @@ On Windows PowerShell, use `Copy-Item .env.example .env`.
 Edit `.env` and replace the placeholders:
 
 ```dotenv
-PORT=8000
 ADDON_URL=https://telegram.example.com
 API_KEY=REPLACE_WITH_YOUR_GENERATED_ACCESS_KEY
 API_ID=123456
@@ -161,7 +158,6 @@ API_HASH=YOUR_TELEGRAM_API_HASH
 USER_SESSION_STRING=YOUR_TELETHON_STRING_SESSION
 
 DEBUG_ENABLED=true
-DEBUG_PORT=8001
 DEBUG_HOST=0.0.0.0
 CACHE_MB=512
 # CHANNEL_IDS=-1001234567890,-1009876543210
@@ -177,8 +173,8 @@ services:
     build: .
     env_file: .env
     ports:
-      - "127.0.0.1:${PORT:-8000}:${PORT:-8000}"
-      - "127.0.0.1:${DEBUG_PORT:-8001}:${DEBUG_PORT:-8001}"
+      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8001:8001"
     volumes:
       - telegram-data:/data
     restart: unless-stopped
@@ -197,6 +193,9 @@ docker compose logs -f addon
 ```
 
 The named volume preserves the index and cache across container restarts and rebuilds.
+The app always listens on container ports 8000 and 8001. To use different host
+ports, change the left-hand port in `compose.yaml` (for example,
+`127.0.0.1:9000:8000`).
 
 ### 3. Configure HTTPS
 
@@ -264,15 +263,14 @@ Open the add-on's **Configuration** tab. Enter the credentials from [Prepare you
 Example YAML configuration:
 
 ```yaml
-PORT: 8000
 ADDON_URL: "https://telegram.example.com"
 API_KEY: "REPLACE_WITH_YOUR_GENERATED_ACCESS_KEY"
 API_ID: 123456
 API_HASH: "YOUR_TELEGRAM_API_HASH"
 USER_SESSION_STRING: "YOUR_TELETHON_STRING_SESSION"
-DEBUG_ENABLED: true
-DEBUG_PORT: 8001
-DEBUG_HOST: "0.0.0.0"
+debug:
+  DEBUG_ENABLED: true
+  DEBUG_HOST: "0.0.0.0"
 CACHE_MB: 512
 CHANNEL_IDS: ""
 ```
@@ -283,7 +281,8 @@ Home Assistant stores application data in `/data/stremio`. Restart the add-on af
 
 ### 4. Configure the connection
 
-The add-on uses **host networking**. Choose unused ports, and point your HTTPS reverse proxy at:
+The app listens on internal ports 8000 and 8001. The add-on's **Network** section
+maps them to host ports; change those mappings if needed. Point your HTTPS reverse proxy at:
 
 ```text
 http://HOME_ASSISTANT_IP:8000
@@ -301,7 +300,7 @@ https://telegram.example.com/YOUR_API_KEY/manifest.json
 
 With `DEBUG_ENABLED: true`, select **Open Web UI** on the add-on page and sign in with your `API_KEY`.
 
-The button currently targets port **8001**. If you change `DEBUG_PORT`, open `http://HOME_ASSISTANT_IP:YOUR_DEBUG_PORT` directly.
+The button uses the dashboard's mapped host port. You can also open `http://HOME_ASSISTANT_IP:8001` directly, using your chosen host port if you changed the mapping.
 
 ## 🧰 Debug dashboard
 
