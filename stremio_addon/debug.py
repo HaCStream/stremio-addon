@@ -9,6 +9,7 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from .core import normalize
+from .ai_search import ai_query
 from .version import get_version
 
 
@@ -50,7 +51,7 @@ def create_debug_app(runtime):
     def safe_text(value):
         text = str(value)
         for secret in (app.state.runtime.cfg.key, app.state.runtime.cfg.session,
-                       app.state.runtime.cfg.api_hash):
+                       app.state.runtime.cfg.api_hash, app.state.runtime.cfg.gemini_api_key):
             if secret:
                 text = text.replace(secret, '[redacted]')
         text = re.sub(r'https?://\S+', '[url]', text)
@@ -105,6 +106,9 @@ def create_debug_app(runtime):
             'debug_port': shared.cfg.debug_port,
             'addon_port': shared.cfg.port,
             'cache_mb': shared.cfg.cache_bytes // 1024**2,
+            'ai_search_enabled': shared.cfg.ai_search_enabled,
+            'ai_search_prefix_enabled': shared.cfg.ai_search_prefix_enabled,
+            'ai_index': dict(shared.ai.status) if shared.ai else None,
         }
 
     @app.get('/api/channels')
@@ -128,7 +132,7 @@ def create_debug_app(runtime):
     @app.get('/api/search')
     async def search(
         q: str = Query('', max_length=500),
-        mode: str = Query('text', pattern='^(text|imdb)$'),
+        mode: str = Query('text', pattern='^(text|imdb|ai)$'),
         kind: str = Query('movie', pattern='^(movie|series)$'),
         skip: int = Query(0, ge=0, le=10_000_000),
         x_debug_key: str | None = Header(None),
@@ -139,7 +143,17 @@ def create_debug_app(runtime):
         available = channels()
         allowed = set(shared.tg.channels)
         aliases, resolved_year = [], None
-        if mode == 'text':
+        if mode == 'ai':
+            clean = ai_query(q, shared.cfg.ai_search_prefix_enabled)
+            if not shared.ai or not clean:
+                matched = []
+            else:
+                try:
+                    rows = await shared.ai.search(clean, allowed, skip)
+                    matched = [(row, 'AI search') for row in rows]
+                except Exception:
+                    matched = []
+        elif mode == 'text':
             rows = shared.store.catalog(q, skip, 100) if q.strip() else []
             matched = [(row, 'full-text index') for row in rows if row['channel'] in allowed]
         else:

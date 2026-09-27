@@ -71,6 +71,9 @@ Set these values in `.env` for Docker Compose. In Home Assistant, enter the corr
 | `debug_host` | Dashboard bind address. Keep the default for Docker port forwarding. | `false` | `0.0.0.0` | `0.0.0.0` |
 | `cache_mb` | Disk chunk-cache limit in MiB; `0` disables new cache writes. | `false` | `512` | `1024` |
 | `CHANNEL_IDS` | Comma-separated negative IDs limiting which joined private broadcast channels are indexed. Blank selects all eligible channels. | `false` | Empty | `-1001234567890,-1009876543210` |
+| `AI_SEARCH_ENABLED` | Adds the separate **Telegram AI Search** catalog and builds a semantic index in the background. | `false` | `false` | `true` |
+| `GEMINI_API_KEY` | Gemini API credential; required only when AI search is enabled. | Conditional | Empty | `YOUR_GEMINI_API_KEY` |
+| `AI_SEARCH_PREFIX_ENABLED` | Require a leading `AI` word (case insensitive) for searches in the AI catalog. | `false` | `false` | `true` |
 | `data_dir` | Persistent index and cache directory. Home Assistant manages this automatically; it is not a UI option. | `false` | `/data` standalone; `/data/stremio` in Home Assistant | `/data` |
 
 Use the variable names shown above. The application also accepts uppercase equivalents for lowercase settings, with nonempty lowercase values taking precedence. `CHANNEL_IDS` takes precedence over its lowercase alias. The supplied Compose port mappings use lowercase `port` and `debug_port`.
@@ -80,6 +83,12 @@ Use the variable names shown above. The application also accepts uppercase equiv
 Leave `CHANNEL_IDS` empty to discover all joined private broadcast channels, including archived dialogs. To limit indexing, copy the full negative channel IDs from the protected status endpoint into `CHANNEL_IDS`, then restart.
 
 Selecting a channel does not join it. Public channels and groups are excluded. Removing a channel from the selection removes its indexed entries when discovery runs; selecting it again starts a fresh history scan.
+
+### ✨ AI search
+
+Set `AI_SEARCH_ENABLED=true` and provide `GEMINI_API_KEY` to add a separate **Telegram AI Search** catalog to Stremio. The existing **Telegram Videos** catalog keeps its ordinary text search. With `AI_SEARCH_PREFIX_ENABLED=true`, enter a search such as `AI someone relives the same day` in the AI catalog; searches without a separate leading `AI` word return no results there and do not call Gemini. The prefix is case insensitive.
+
+AI search generates and stores embeddings for indexed titles, filenames, and caption excerpts. For entries without a meaningful caption, it may ask Gemini for a short description when the title can be identified confidently. This background indexing uses Gemini even if prefix mode is enabled. Search queries also use Gemini to retrieve and rank indexed entries. Only indexed entries in currently selected channels can be returned. Titles and caption excerpts are sent to Gemini; Telegram credentials, channel IDs, playback URLs, and video bytes are not. The debug dashboard displays indexing progress. New and edited entries are indexed incrementally, and search works with already processed entries while the initial index fills.
 
 ## 🔑 Prepare your credentials
 

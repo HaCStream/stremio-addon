@@ -28,6 +28,9 @@ options:
   user_session_string: ""
   cache_mb: 512
   CHANNEL_IDS: ""
+  AI_SEARCH_ENABLED: false
+  GEMINI_API_KEY: ""
+  AI_SEARCH_PREFIX_ENABLED: false
 schema:
   port: port
   debug_enabled: bool
@@ -40,3 +43,6 @@ schema:
   user_session_string: password
   cache_mb: int(0,)
   CHANNEL_IDS: str?
+  AI_SEARCH_ENABLED: bool
+  GEMINI_API_KEY: password?
+  AI_SEARCH_PREFIX_ENABLED: bool

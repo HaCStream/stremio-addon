@@ -7,7 +7,8 @@ from pathlib import Path
 FIELDS = (
     "port", "addon_url", "api_key", "api_id", "api_hash",
     "user_session_string", "cache_mb", "CHANNEL_IDS", "debug_port",
-    "debug_host", "debug_enabled",
+    "debug_host", "debug_enabled", "AI_SEARCH_ENABLED", "GEMINI_API_KEY",
+    "AI_SEARCH_PREFIX_ENABLED",
 )
 
 

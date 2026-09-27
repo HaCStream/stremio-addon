@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from .core import byte_range
+from .ai_search import ai_query
 from .runtime import Runtime
 from .telegram import Telegram
 from .version import get_version
@@ -22,7 +23,7 @@ interaction_log.setLevel(logging.INFO)
 
 def safe_log_text(value, cfg):
     text = str(value)
-    for secret in (cfg.key, cfg.session, cfg.api_hash):
+    for secret in (cfg.key, cfg.session, cfg.api_hash, cfg.gemini_api_key):
         if secret:
             text = text.replace(secret, '[redacted]')
     text = re.sub(r'https?://\S+|/(?:play|thumb)/\S+', '[url]', text)
@@ -115,12 +116,16 @@ def create_app_with_runtime(runtime):
     @app.get('/{key}/manifest.json')
     async def manifest(key):
         auth(key)
+        catalogs = [{'type': 'movie', 'id': 'telegram', 'name': 'Telegram Videos', 'extra': [{'name': 'search', 'isRequired': False}, {'name': 'skip', 'isRequired': False}]}]
+        if app.state.cfg.ai_search_enabled:
+            catalogs.append({'type': 'movie', 'id': 'telegram-ai', 'name': 'Telegram AI Search',
+                             'extra': [{'name': 'search', 'isRequired': True}, {'name': 'skip', 'isRequired': False}]})
         return {'id': 'community.private.telegram', 'version': get_version(), 'name': 'Private Telegram Videos',
                 'description': 'Stream your private Telegram videos',
                 'logo': 'https://raw.githubusercontent.com/hilayc/stremio-addon/main/stremio_addon/icon.png',
                 'types': ['movie', 'series'],
                 'resources': [{'name': 'catalog', 'types': ['movie']}, {'name': 'meta', 'types': ['movie'], 'idPrefixes': ['tg:']}, {'name': 'stream', 'types': ['movie', 'series'], 'idPrefixes': ['tg:', 'tt']}],
-                'catalogs': [{'type': 'movie', 'id': 'telegram', 'name': 'Telegram Videos', 'extra': [{'name': 'search', 'isRequired': False}, {'name': 'skip', 'isRequired': False}]}]}
+                'catalogs': catalogs}
 
     @app.get('/{key}/catalog/{kind}/{catalog_id}.json')
     @app.get('/{key}/catalog/{kind}/{catalog_id}/{extras}.json')
@@ -130,7 +135,7 @@ def create_app_with_runtime(runtime):
         query = args.get('search', [''])[0][:500]
         interaction(request, 'catalog_search' if query else 'catalog_browse', query=query,
                     type=kind, catalog=catalog_id, result_count=0)
-        if kind != 'movie' or catalog_id != 'telegram':
+        if kind != 'movie' or catalog_id not in ('telegram', 'telegram-ai'):
             return {'metas': []}
         try:
             skip = int(args.get('skip', ['0'])[0])
@@ -139,7 +144,19 @@ def create_app_with_runtime(runtime):
         except ValueError:
             raise HTTPException(400, 'Invalid skip') from None
         request.state.interaction['skip'] = skip
-        rows = [r for r in app.state.store.catalog(query, skip) if r['channel'] in app.state.tg.channels]
+        if catalog_id == 'telegram-ai':
+            clean = ai_query(query, app.state.cfg.ai_search_prefix_enabled)
+            if not app.state.cfg.ai_search_enabled or not clean:
+                rows = []
+            else:
+                try:
+                    rows = await app.state.runtime.ai.search(clean, set(app.state.tg.channels), skip)
+                    request.state.interaction['ai_status'] = 'ok'
+                except Exception as exc:
+                    request.state.interaction['ai_status'] = type(exc).__name__
+                    rows = [r for r in app.state.store.catalog(clean, skip) if r['channel'] in app.state.tg.channels]
+        else:
+            rows = [r for r in app.state.store.catalog(query, skip) if r['channel'] in app.state.tg.channels]
         results(request, rows)
         return {'metas': [meta(r) for r in rows]}
 

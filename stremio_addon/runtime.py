@@ -5,6 +5,7 @@ from collections import deque
 from .core import Settings, Store, Tokens
 from .metadata import Metadata
 from .telegram import Telegram
+from .ai_search import AISearch
 
 
 class Runtime:
@@ -27,9 +28,14 @@ class Runtime:
                 self.tg = self.gateway_factory(self.cfg, self.store)
                 self.metadata = Metadata()
                 self.tokens = Tokens(self.cfg.key)
+                self.ai = AISearch(self.cfg, self.store) if self.cfg.ai_search_enabled else None
                 try:
                     await self.tg.start()
+                    if self.ai:
+                        await self.ai.start()
                 except Exception:
+                    if self.ai:
+                        await self.ai.close()
                     await self.metadata.http.aclose()
                     self.store.db.close()
                     raise
@@ -41,6 +47,8 @@ class Runtime:
         async with self.lock:
             self.users -= 1
             if not self.users:
+                if self.ai:
+                    await self.ai.close()
                 await self.tg.close()
                 await self.metadata.http.aclose()
                 self.store.db.close()

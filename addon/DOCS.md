@@ -92,6 +92,12 @@ https://YOUR_DOMAIN/YOUR_API_KEY/manifest.json
 ```
 
 The protected `/<api_key>/status` endpoint shows Telegram indexing progress.
+Optional AI search is configured with `AI_SEARCH_ENABLED`, `GEMINI_API_KEY`, and
+`AI_SEARCH_PREFIX_ENABLED` in the Configuration tab. Enabling it adds a separate
+Telegram AI Search catalog and starts background Gemini embedding calls. Prefix
+mode restricts query-time calls to searches beginning with `AI` or `ai`; it does
+not disable initial embedding calls. Titles and short caption excerpts are sent
+to Gemini. The debug dashboard shows semantic indexing progress.
 The debug dashboard is available directly on `debug_port`. Sign in with the
 configured API key to inspect channels, indexing progress, recent searches, and
 read-only search results. It does not expose playback URLs and does not use

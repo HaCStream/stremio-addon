@@ -47,6 +47,9 @@ class Settings:
     debug_port: int = 8001
     debug_host: str = '0.0.0.0'
     debug_enabled: bool = True
+    ai_search_enabled: bool = False
+    gemini_api_key: str = ''
+    ai_search_prefix_enabled: bool = False
 
     @classmethod
     def env(cls):
@@ -105,13 +108,23 @@ class Settings:
         if raw_debug_enabled not in ('1', 'true', 'yes', 'on', '0', 'false', 'no', 'off'):
             raise ValueError('debug_enabled must be true or false')
         debug_enabled = raw_debug_enabled in ('1', 'true', 'yes', 'on')
+        def boolean(name):
+            value = get(name, 'false').lower()
+            if value not in ('1', 'true', 'yes', 'on', '0', 'false', 'no', 'off'):
+                raise ValueError(f'{name} must be true or false')
+            return value in ('1', 'true', 'yes', 'on')
+        ai_enabled = boolean('AI_SEARCH_ENABLED')
+        ai_prefix = boolean('AI_SEARCH_PREFIX_ENABLED')
+        gemini_key = str(os.getenv('GEMINI_API_KEY') or options.get('GEMINI_API_KEY') or '').strip() if ai_enabled else ''
+        if ai_enabled and not gemini_key:
+            raise ValueError('GEMINI_API_KEY is required when AI_SEARCH_ENABLED is true')
         if debug_enabled and debug_port == port:
             raise ValueError('debug_port must differ from port')
         if not 1 <= debug_port <= 65535:
             raise ValueError('debug_port must be between 1 and 65535')
         return cls(port, url, key, int(get('api_id')), get('api_hash'), get('user_session_string'),
                    Path(get('data_dir', default_data)), int(get('cache_mb', '512')) * 1024**2,
-                   channel_ids, debug_port, debug_host, debug_enabled)
+                   channel_ids, debug_port, debug_host, debug_enabled, ai_enabled, gemini_key, ai_prefix)
 
 
 class Tokens:
@@ -166,11 +179,18 @@ class Store:
         CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(id UNINDEXED, text, tokenize='unicode61');
         CREATE TABLE IF NOT EXISTS checkpoints(channel INTEGER PRIMARY KEY, oldest INTEGER, newest INTEGER, complete INTEGER DEFAULT 0);
         CREATE TABLE IF NOT EXISTS mappings(id TEXT PRIMARY KEY, imdb TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS ai_embeddings(id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL,
+          model TEXT NOT NULL, vector BLOB NOT NULL);
+        CREATE TABLE IF NOT EXISTS ai_descriptions(title_key TEXT PRIMARY KEY,
+          description TEXT NOT NULL);
         ''')
 
     def upsert(self, row):
         row = dict(row, search=normalize(' '.join(str(row.get(k) or '') for k in ('title', 'filename', 'caption'))))
         with self.db:
+            previous = self.db.execute('SELECT title,filename,caption FROM videos WHERE id=?', (row['id'],)).fetchone()
+            if previous and any((previous[k] or '') != (row.get(k) or '') for k in ('title', 'filename', 'caption')):
+                self.db.execute('DELETE FROM ai_embeddings WHERE id=?', (row['id'],))
             self.db.execute('INSERT OR REPLACE INTO videos (' + ','.join(row) + ') VALUES (' + ','.join('?' for _ in row) + ')', list(row.values()))
             self.db.execute('DELETE FROM search WHERE id=?', (row['id'],))
             self.db.execute('INSERT INTO search VALUES (?,?)', (row['id'], row['search']))
@@ -179,6 +199,7 @@ class Store:
         with self.db:
             self.db.execute('DELETE FROM videos WHERE id=?', (item,))
             self.db.execute('DELETE FROM search WHERE id=?', (item,))
+            self.db.execute('DELETE FROM ai_embeddings WHERE id=?', (item,))
 
     def get(self, item):
         row = self.db.execute('SELECT * FROM videos WHERE id=?', (item,)).fetchone()
