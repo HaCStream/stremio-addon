@@ -14,16 +14,13 @@ arch:
 startup: application
 boot: auto
 init: false
-host_network: true
 ports:
-  8000/tcp: null
-  8001/tcp: null
+  8000/tcp: 8000
+  8001/tcp: 8001
 timeout: 30
 options:
-  PORT: 8000
   debug:
     DEBUG_ENABLED: true
-    DEBUG_PORT: 8001
     DEBUG_HOST: "0.0.0.0"
   ADDON_URL: ""
   API_KEY: ""
@@ -37,10 +34,8 @@ options:
     GEMINI_API_KEY: ""
     AI_SEARCH_PREFIX_ENABLED: false
 schema:
-  PORT: port
   debug:
     DEBUG_ENABLED: bool
-    DEBUG_PORT: port
     DEBUG_HOST: str
   ADDON_URL: url
   API_KEY: password

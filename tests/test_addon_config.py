@@ -12,11 +12,11 @@ def test_addon_config_schema_is_supported():
     assert validate(config) == []
 
 
-def test_uppercase_port_validator_is_rejected():
+def test_invalid_schema_type_is_rejected():
     config = yaml.safe_load(Path("addon/config.yaml").read_text(encoding="utf-8"))
     broken = copy.deepcopy(config)
-    broken["schema"]["PORT"] = "PORT"
-    assert "schema.PORT: unsupported Home Assistant type 'PORT'" in validate(broken)
+    broken["schema"]["CACHE_MB"] = "PORT"
+    assert "schema.CACHE_MB: unsupported Home Assistant type 'PORT'" in validate(broken)
 
 
 def test_nested_options_and_translations_cover_schema():
@@ -30,9 +30,8 @@ def test_nested_options_and_translations_cover_schema():
 
 def test_nested_options_reach_application_environment():
     env = {}
-    configure({"debug": {"DEBUG_ENABLED": False, "DEBUG_PORT": 9001},
+    configure({"debug": {"DEBUG_ENABLED": False},
                "ai": {"AI_SEARCH_ENABLED": True, "GEMINI_API_KEY": "secret"}}, env)
     assert env["DEBUG_ENABLED"] == "False"
-    assert env["DEBUG_PORT"] == "9001"
     assert env["AI_SEARCH_ENABLED"] == "True"
     assert env["GEMINI_API_KEY"] == "secret"

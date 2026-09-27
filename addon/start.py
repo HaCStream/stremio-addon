@@ -5,12 +5,12 @@ import sys
 from pathlib import Path
 
 FIELDS = (
-    "PORT", "ADDON_URL", "API_KEY", "API_ID", "API_HASH",
-    "USER_SESSION_STRING", "CACHE_MB", "CHANNEL_IDS", "DEBUG_PORT",
+    "ADDON_URL", "API_KEY", "API_ID", "API_HASH",
+    "USER_SESSION_STRING", "CACHE_MB", "CHANNEL_IDS",
     "DEBUG_HOST", "DEBUG_ENABLED", "AI_SEARCH_ENABLED", "GEMINI_API_KEY",
     "AI_SEARCH_PREFIX_ENABLED",
 )
-GROUPS = {name: "debug" for name in ("DEBUG_PORT", "DEBUG_HOST", "DEBUG_ENABLED")}
+GROUPS = {name: "debug" for name in ("DEBUG_HOST", "DEBUG_ENABLED")}
 GROUPS.update({name: "ai" for name in ("AI_SEARCH_ENABLED", "GEMINI_API_KEY", "AI_SEARCH_PREFIX_ENABLED")})
 
 

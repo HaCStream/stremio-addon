@@ -48,10 +48,8 @@ Set these options in the add-on's Configuration tab:
 
 | Option / environment variable | Value |
 | --- | --- |
-| `PORT` | Unused host TCP port, default `8000` |
 | `ADDON_URL` | External HTTPS base URL of your reverse proxy |
 | `DEBUG_ENABLED` | Enable the read-only debug dashboard (default `true`) |
-| `DEBUG_PORT` | Separate dashboard port (default `8001`) |
 | `DEBUG_HOST` | Dashboard listen address (default `0.0.0.0`) |
 | `API_KEY` | At least 32 random URL-safe characters |
 | `API_ID` | Positive Telegram application ID |
@@ -78,13 +76,12 @@ a Telethon StringSession. Startup validates the session format and reports a
 clear error without printing the value. Telegram authorization is then checked
 by the application.
 
-Host networking lets the configured `PORT` work without a fixed Docker port
-mapping. The server listens on all host interfaces, so choose a free port and
-configure your network accordingly. No Supervisor or Home Assistant API access
-is requested. Stremio needs a directly reachable endpoint.
+The app listens on internal ports 8000 and 8001. Use the add-on's **Network**
+section to change the host port mappings. No Supervisor or Home Assistant API
+access is requested. Stremio needs a directly reachable endpoint.
 
 Point your HTTPS reverse proxy at `http://HOME_ASSISTANT_IP:8000` (or your
-configured port). Forward byte-range requests and disable proxy caching and
+mapped host port). Forward byte-range requests and disable proxy caching and
 access logs that expose credential-bearing URLs. Install in Stremio with:
 
 ```text
@@ -99,12 +96,12 @@ Telegram AI Search catalog and starts background Gemini embedding calls. Prefix
 mode restricts query-time calls to searches beginning with `AI` or `ai`; it does
 not disable initial embedding calls. Titles and short caption excerpts are sent
 to Gemini. The debug dashboard shows semantic indexing progress.
-The debug dashboard is available directly on `DEBUG_PORT`. Sign in with the
+The debug dashboard is available through the host port mapped to 8001. Sign in with the
 configured API key to inspect channels, indexing progress, recent searches, and
 read-only search results. It does not expose playback URLs and does not use
 `ADDON_URL` for its own requests.
 The add-on page's **Open Web UI** button opens the dashboard on its standard
-port. Use **Sync now** in the dashboard after joining a channel or adding a video
+port by default. Use **Sync now** in the dashboard after joining a channel or adding a video
 to trigger channel discovery and catch-up indexing immediately.
 
 SQLite and video chunks persist under `/data/stremio`; Supervisor keeps options

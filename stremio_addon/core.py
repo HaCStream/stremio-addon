@@ -102,8 +102,8 @@ class Settings:
             if any(not re.fullmatch(r'-[1-9][0-9]*', part) for part in parts):
                 raise ValueError('CHANNEL_IDS must contain only comma-separated negative channel IDs')
             channel_ids = frozenset(int(part) for part in parts)
-        port = int(get('PORT', '8000'))
-        debug_port = int(get('DEBUG_PORT', '8001'))
+        port = 8000
+        debug_port = 8001
         debug_host = get('DEBUG_HOST', '0.0.0.0')
         raw_debug_enabled = get('DEBUG_ENABLED', 'true').lower()
         if raw_debug_enabled not in ('1', 'true', 'yes', 'on', '0', 'false', 'no', 'off'):
@@ -119,10 +119,6 @@ class Settings:
         gemini_key = get('GEMINI_API_KEY') if ai_enabled else ''
         if ai_enabled and not gemini_key:
             raise ValueError('GEMINI_API_KEY is required when AI_SEARCH_ENABLED is true')
-        if debug_enabled and debug_port == port:
-            raise ValueError('DEBUG_PORT must differ from PORT')
-        if not 1 <= debug_port <= 65535:
-            raise ValueError('DEBUG_PORT must be between 1 and 65535')
         return cls(port, url, key, int(get('API_ID')), get('API_HASH'), get('USER_SESSION_STRING'),
                    Path(get('DATA_DIR', default_data)), int(get('CACHE_MB', '512')) * 1024**2,
                    channel_ids, debug_port, debug_host, debug_enabled, ai_enabled, gemini_key, ai_prefix)

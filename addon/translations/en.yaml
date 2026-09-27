@@ -1,8 +1,4 @@
 configuration:
-  PORT:
-    name: Addon port
-    description: >-
-      Host port for the Stremio addon. Default is 8000; choose a free port.
   debug:
     name: Debug dashboard
     description: Configure the dashboard for inspecting indexing and search activity.
@@ -10,9 +6,6 @@ configuration:
       DEBUG_ENABLED:
         name: Enable debug dashboard
         description: Allow access to the dashboard and its search and sync tools.
-      DEBUG_PORT:
-        name: Debug port
-        description: Host port for the dashboard. Must differ from the addon port.
       DEBUG_HOST:
         name: Debug listen address
         description: Address the dashboard binds to. Use 0.0.0.0 for access through the network.
@@ -58,5 +51,5 @@ configuration:
           Only send search queries to Gemini when they begin with AI or ai. Initial
           indexing still sends titles and short caption excerpts to Gemini.
 network:
-  8000/tcp: Stremio addon endpoint (default; ports are set in configuration).
-  8001/tcp: Debug dashboard endpoint (default; ports are set in configuration).
+  8000/tcp: Stremio addon endpoint.
+  8001/tcp: Debug dashboard endpoint.
