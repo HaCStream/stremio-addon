@@ -1,5 +1,15 @@
 # Changelog
 
+<!-- release:1.4.4:start -->
+## 1.4.4
+
+## What's Changed
+* Translate and group add-on settings; use fixed internal ports by @hilayc in https://github.com/hilayc/stremio-addon/pull/13
+
+
+**Full Changelog**: https://github.com/hilayc/stremio-addon/compare/v1.4.3...v1.4.4
+<!-- release:1.4.4:end -->
+
 <!-- release:1.4.3:start -->
 ## 1.4.3
 
