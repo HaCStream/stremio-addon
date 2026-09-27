@@ -32,9 +32,9 @@ options:
   GEMINI_API_KEY: ""
   AI_SEARCH_PREFIX_ENABLED: false
 schema:
-  PORT: PORT
+  PORT: port
   DEBUG_ENABLED: bool
-  DEBUG_PORT: PORT
+  DEBUG_PORT: port
   DEBUG_HOST: str
   ADDON_URL: url
   API_KEY: password
