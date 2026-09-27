@@ -1,21 +1,11 @@
 configuration:
-  debug:
-    name: Debug dashboard
-    description: Configure the dashboard for inspecting indexing and search activity.
-    fields:
-      DEBUG_ENABLED:
-        name: Enable debug dashboard
-        description: Allow access to the dashboard and its search and sync tools.
-      DEBUG_HOST:
-        name: Debug listen address
-        description: Address the dashboard binds to. Use 0.0.0.0 for access through the network.
   ADDON_URL:
     name: Addon URL
     description: >-
       Public HTTP or HTTPS base URL used for addon links. Include the scheme and domain,
       without a trailing slash or API key.
   API_KEY:
-    name: API key
+    name: Addon API key
     description: >-
       Secret with at least 32 URL-safe characters used to protect addon and dashboard requests.
   API_ID:
@@ -50,6 +40,16 @@ configuration:
         description: >-
           Only send search queries to Gemini when they begin with AI or ai. Initial
           indexing still sends titles and short caption excerpts to Gemini.
+  debug:
+    name: Debug dashboard
+    description: Configure the dashboard for inspecting indexing and search activity.
+    fields:
+      DEBUG_ENABLED:
+        name: Enable debug dashboard
+        description: Allow access to the dashboard and its search and sync tools.
+      DEBUG_HOST:
+        name: Debug listen address
+        description: Address the dashboard binds to. Use 0.0.0.0 for access through the network.
 network:
   8000/tcp: Stremio addon endpoint.
   8001/tcp: Debug dashboard endpoint.
