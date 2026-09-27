@@ -122,7 +122,7 @@ def create_app_with_runtime(runtime):
                              'extra': [{'name': 'search', 'isRequired': True}, {'name': 'skip', 'isRequired': False}]})
         return {'id': 'community.private.telegram', 'version': get_version(), 'name': 'Private Telegram Videos',
                 'description': 'Stream your private Telegram videos',
-                'logo': 'https://raw.githubusercontent.com/hilayc/stremio-addon/main/stremio_addon/icon.png',
+                'logo': 'https://raw.githubusercontent.com/HaCStream/stremio-addon/main/stremio_addon/icon.png',
                 'types': ['movie', 'series'],
                 'resources': [{'name': 'catalog', 'types': ['movie']}, {'name': 'meta', 'types': ['movie'], 'idPrefixes': ['tg:']}, {'name': 'stream', 'types': ['movie', 'series'], 'idPrefixes': ['tg:', 'tt']}],
                 'catalogs': catalogs}

@@ -9,7 +9,7 @@ LABEL io.hass.name="Stremio Telegram" \
       io.hass.type="addon" \
       io.hass.version="${BUILD_VERSION}" \
       io.hass.arch="${BUILD_ARCH}" \
-      org.opencontainers.image.source="https://github.com/hilayc/stremio-addon"
+      org.opencontainers.image.source="https://github.com/HaCStream/stremio-addon"
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

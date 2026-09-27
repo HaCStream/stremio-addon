@@ -11,7 +11,7 @@ git push origin v1.0.4
 ```
 
 The tag must include the workflow and `scripts/release_version.py`. The workflow
-runs tests, publishes `ghcr.io/hilayc/stremio-addon:1.0.4`, and creates the GitHub
+runs tests, publishes `ghcr.io/hacstream/stremio-addon:1.0.4`, and creates the GitHub
 Release `v1.0.4` if it does not already exist. Images are published to GHCR only;
 no Docker tar archive is exported or uploaded. Existing release notes are preserved,
 and notes are generated only when creating a new release. It then updates the top-level

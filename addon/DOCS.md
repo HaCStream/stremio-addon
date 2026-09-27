@@ -2,10 +2,10 @@
 
 This folder describes an amd64 Home Assistant add-on for the program in the
 repository root. It uses `ghcr.io/home-assistant/amd64-base:3.24` and runs the
-published image `ghcr.io/hilayc/stremio-addon:main`.
+published image `ghcr.io/hacstream/stremio-addon:main`.
 
 Home Assistant appends `version` to `image`, so `config.yaml` intentionally has
-`image: ghcr.io/hilayc/stremio-addon` and `version: main`. Putting `:main` inside
+`image: ghcr.io/hacstream/stremio-addon` and `version: main`. Putting `:main` inside
 the image field would cause Home Assistant to append a second tag.
 
 ## Build and publish
@@ -16,8 +16,8 @@ From the **repository root**, run:
 docker build --platform linux/amd64 \
   --build-arg BUILD_FROM=ghcr.io/home-assistant/amd64-base:3.24 \
   -f addon/Dockerfile \
-  -t ghcr.io/hilayc/stremio-addon:main .
-docker push ghcr.io/hilayc/stremio-addon:main
+  -t ghcr.io/hacstream/stremio-addon:main .
+docker push ghcr.io/hacstream/stremio-addon:main
 ```
 
 The final dot is important: the Dockerfile copies the existing `addon/`,
@@ -34,7 +34,7 @@ pull the replacement (back up the add-on first), or adopt versioned tags later.
 ## Install
 
 After pushing these files to the repository and publishing the image, add
-`https://github.com/hilayc/stremio-addon` in Home Assistant's add-on store
+`https://github.com/HaCStream/stremio-addon` in Home Assistant's add-on store
 repository menu. Install **Stremio Telegram** on an amd64 installation.
 
 Alternatively, copy this entire folder to `/addons/stremio-telegram` on

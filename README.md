@@ -103,7 +103,7 @@ Sign in at [my.telegram.org](https://my.telegram.org), open **API development to
 On a trusted computer with Git and Python 3.12:
 
 ```sh
-git clone https://github.com/hilayc/stremio-addon.git
+git clone https://github.com/HaCStream/stremio-addon.git
 cd stremio-addon
 python -m venv .venv
 ```
@@ -245,12 +245,12 @@ Open **Settings → Add-ons → Add-on Store**, then open the **⋮** menu and c
 Paste this URL and select **Add**:
 
 ```text
-https://github.com/hilayc/stremio-addon
+https://github.com/HaCStream/stremio-addon
 ```
 
 You can also use this shortcut:
 
-[Add repository to Home Assistant](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fhilayc%2Fstremio-addon)
+[Add repository to Home Assistant](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FHaCStream%2Fstremio-addon)
 
 ### 2. Install the add-on
 
