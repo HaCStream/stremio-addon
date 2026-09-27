@@ -179,6 +179,8 @@ class Store:
           model TEXT NOT NULL, vector BLOB NOT NULL);
         CREATE TABLE IF NOT EXISTS ai_descriptions(title_key TEXT PRIMARY KEY,
           description TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS ai_rate_limit(id INTEGER PRIMARY KEY CHECK (id=1),
+          retry_at REAL NOT NULL, strikes INTEGER NOT NULL);
         ''')
 
     def upsert(self, row):

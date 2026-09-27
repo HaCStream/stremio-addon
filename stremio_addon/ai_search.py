@@ -1,6 +1,8 @@
 """Private, incremental Gemini-assisted retrieval over locally indexed items."""
 import asyncio
 from array import array
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import hashlib
 import heapq
 import json
@@ -16,6 +18,11 @@ EMBED_MODEL = 'gemini-embedding-2'
 GENERATE_MODEL = 'gemini-3.8-flash'
 DIMENSIONS = 768
 API = 'https://generativelanguage.googleapis.com/v1beta/models/'
+MIN_REQUEST_INTERVAL = 2
+
+
+class GeminiCooldown(httpx.HTTPError):
+    """A prior 429 has paused all calls for this installation."""
 
 
 def ai_query(text, prefix_required):
@@ -36,7 +43,44 @@ class AISearch:
         self.task = None
         self.cache = {}
         self.retries = {}
+        self.request_lock = asyncio.Lock()
+        self.last_request = 0
+        saved = store.db.execute('SELECT retry_at,strikes FROM ai_rate_limit WHERE id=1').fetchone()
+        self.retry_at = saved['retry_at'] if saved else 0
+        self.strikes = saved['strikes'] if saved else 0
         self.status = {'embedded': 0, 'pending': 0, 'last_error': None}
+
+    def cooldown_remaining(self):
+        return max(0, math.ceil(self.retry_at - time.time()))
+
+    def snapshot(self):
+        return {**self.status, 'retry_after_seconds': self.cooldown_remaining()}
+
+    def _save_cooldown(self):
+        with self.store.db:
+            self.store.db.execute('INSERT OR REPLACE INTO ai_rate_limit VALUES (1,?,?)',
+                                  (self.retry_at, self.strikes))
+
+    def _retry_delay(self, response):
+        delay = min(3600, 60 * 2 ** min(self.strikes, 6))
+        header = response.headers.get('retry-after', '')
+        try:
+            delay = max(delay, float(header))
+        except ValueError:
+            try:
+                date = parsedate_to_datetime(header)
+                delay = max(delay, (date - datetime.now(timezone.utc)).total_seconds())
+            except (TypeError, ValueError, OverflowError):
+                pass
+        try:
+            details = response.json().get('error', {}).get('details', [])
+            for detail in details:
+                retry = detail.get('retryDelay', '')
+                if isinstance(retry, str) and retry.endswith('s'):
+                    delay = max(delay, float(retry[:-1]))
+        except (ValueError, TypeError, AttributeError):
+            pass
+        return min(3600, max(60, delay))
 
     async def start(self):
         self.task = asyncio.create_task(self.index_loop())
@@ -52,10 +96,26 @@ class AISearch:
             await self.http.aclose()
 
     async def request(self, model, action, body):
-        response = await self.http.post(API + model + ':' + action,
-            headers={'x-goog-api-key': self.config.gemini_api_key}, json=body)
-        response.raise_for_status()
-        return response.json()
+        async with self.request_lock:
+            if self.cooldown_remaining():
+                raise GeminiCooldown('Gemini rate limit cooldown active')
+            await asyncio.sleep(max(0, MIN_REQUEST_INTERVAL - (time.monotonic() - self.last_request)))
+            response = await self.http.post(API + model + ':' + action,
+                headers={'x-goog-api-key': self.config.gemini_api_key}, json=body)
+            self.last_request = time.monotonic()
+            if response.status_code == 429:
+                delay = self._retry_delay(response)
+                self.strikes += 1
+                self.retry_at = time.time() + delay
+                self.status['last_error'] = 'Gemini rate limited'
+                self._save_cooldown()
+                raise GeminiCooldown('Gemini rate limited')
+            response.raise_for_status()
+            if self.strikes:
+                self.strikes = 0
+                self.retry_at = 0
+                self._save_cooldown()
+            return response.json()
 
     async def generate(self, prompt):
         data = await self.request(GENERATE_MODEL, 'generateContent', {
@@ -133,6 +193,9 @@ class AISearch:
     async def index_loop(self):
         while True:
             try:
+                if self.cooldown_remaining():
+                    await asyncio.sleep(min(60, self.cooldown_remaining()))
+                    continue
                 pending = []
                 rows = self.store.db.execute('''SELECT v.* FROM videos v LEFT JOIN ai_embeddings a ON a.id=v.id
                     ORDER BY v.id''').fetchall()
@@ -142,7 +205,7 @@ class AISearch:
                     if not current or current['fingerprint'] != self.fingerprint(row) or current['model'] != EMBED_MODEL:
                         pending.append(row)
                 self.status.update(embedded=len(rows) - len(pending), pending=len(pending))
-                if not pending:
+                if not pending and not self.cooldown_remaining():
                     self.status['last_error'] = None
                 processed = 0
                 for row in pending:
@@ -154,13 +217,14 @@ class AISearch:
                     try:
                         await self.index_row(row)
                         self.retries.pop(row['id'], None)
+                    except GeminiCooldown:
+                        break
                     except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
                         self.status['last_error'] = type(exc).__name__
                         self.retries[row['id']] = time.monotonic() + 60
-                        if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
-                            break
                     await asyncio.sleep(.15)
-                await asyncio.sleep(2 if pending else 15)
+                await asyncio.sleep(min(60, self.cooldown_remaining()) if self.cooldown_remaining()
+                                    else 2 if pending else 15)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
