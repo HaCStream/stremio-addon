@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import json
 from urllib.parse import quote
 import pytest
 from fastapi.testclient import TestClient
@@ -174,6 +175,30 @@ def test_environment_overrides_home_assistant_options(tmp_path, monkeypatch):
     monkeypatch.setenv('API_HASH', 'hash')
     monkeypatch.setenv('USER_SESSION_STRING', 'session')
     assert core.Settings.env().url == 'https://environment.example.com'
+
+
+def test_nested_home_assistant_debug_and_ai_options(tmp_path, monkeypatch):
+    import stremio_addon.core as core
+    options = tmp_path / 'options.json'
+    options.write_text(json.dumps({
+        'ADDON_URL': 'https://ha.example.com', 'API_KEY': 'a' * 32,
+        'API_ID': 123, 'API_HASH': 'hash', 'USER_SESSION_STRING': 'session',
+        'debug': {'DEBUG_ENABLED': False, 'DEBUG_PORT': 8123},
+        'ai': {'AI_SEARCH_ENABLED': True, 'GEMINI_API_KEY': 'secret',
+               'AI_SEARCH_PREFIX_ENABLED': True},
+    }))
+    real_path = core.Path
+    monkeypatch.setattr(core, 'Path', lambda value: options if value == '/data/options.json' else real_path(value))
+    for name in ('ADDON_URL', 'API_KEY', 'API_ID', 'API_HASH', 'USER_SESSION_STRING',
+                 'DEBUG_ENABLED', 'DEBUG_PORT', 'AI_SEARCH_ENABLED', 'GEMINI_API_KEY',
+                 'AI_SEARCH_PREFIX_ENABLED'):
+        monkeypatch.delenv(name, raising=False)
+    settings = core.Settings.env()
+    assert not settings.debug_enabled
+    assert settings.debug_port == 8123
+    assert settings.ai_search_enabled
+    assert settings.ai_search_prefix_enabled
+    assert settings.gemini_api_key == 'secret'
 
 
 def test_legacy_home_assistant_options_remain_readable(tmp_path, monkeypatch):

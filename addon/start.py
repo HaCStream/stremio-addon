@@ -10,11 +10,16 @@ FIELDS = (
     "DEBUG_HOST", "DEBUG_ENABLED", "AI_SEARCH_ENABLED", "GEMINI_API_KEY",
     "AI_SEARCH_PREFIX_ENABLED",
 )
+GROUPS = {name: "debug" for name in ("DEBUG_PORT", "DEBUG_HOST", "DEBUG_ENABLED")}
+GROUPS.update({name: "ai" for name in ("AI_SEARCH_ENABLED", "GEMINI_API_KEY", "AI_SEARCH_PREFIX_ENABLED")})
 
 
 def configure(options, environ):
     for name in FIELDS:
         value = options.get(name, options.get(name.lower()))
+        group = options.get(GROUPS.get(name))
+        if isinstance(group, dict):
+            value = group.get(name, group.get(name.lower(), value))
         if value is not None and name not in environ:
             environ[name] = str(value)
     # Supervisor owns /data/options.json; keep app files in their own directory.

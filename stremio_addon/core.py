@@ -62,10 +62,15 @@ class Settings:
                 raise ValueError(
                     'Cannot read Home Assistant options from /data/options.json'
                 ) from exc
-            if not isinstance(options, dict):
-                raise ValueError(
-                    'Home Assistant options in /data/options.json must be a JSON object'
-                )
+        if not isinstance(options, dict):
+            raise ValueError(
+                'Home Assistant options in /data/options.json must be a JSON object'
+            )
+
+        for group_name in ('debug', 'ai'):
+            group = options.get(group_name)
+            if isinstance(group, dict):
+                options.update(group)
 
         def get(name, default=None):
             # Normal container environment values take precedence. Home Assistant

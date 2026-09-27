@@ -93,7 +93,8 @@ https://YOUR_DOMAIN/YOUR_API_KEY/manifest.json
 
 The protected `/<your-api-key>/status` endpoint shows Telegram indexing progress.
 Optional AI search is configured with `AI_SEARCH_ENABLED`, `GEMINI_API_KEY`, and
-`AI_SEARCH_PREFIX_ENABLED` in the Configuration tab. Enabling it adds a separate
+`AI_SEARCH_PREFIX_ENABLED` under **AI search** in the Configuration tab. Debug
+settings are grouped under **Debug dashboard**. Enabling AI adds a separate
 Telegram AI Search catalog and starts background Gemini embedding calls. Prefix
 mode restricts query-time calls to searches beginning with `AI` or `ai`; it does
 not disable initial embedding calls. Titles and short caption excerpts are sent
