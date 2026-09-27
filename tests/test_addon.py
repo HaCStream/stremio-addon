@@ -85,8 +85,8 @@ def test_tokens():
 def test_channel_ids_settings(monkeypatch, value, expected):
     import stremio_addon.core as core
     monkeypatch.setattr(core.Path, 'is_file', lambda self: False)
-    for key, setting in dict(addon_url='https://example.com', api_key='a'*32,
-                             api_id='123', api_hash='hash', user_session_string='session').items():
+    for key, setting in dict(ADDON_URL='https://example.com', API_KEY='a'*32,
+                             API_ID='123', API_HASH='hash', USER_SESSION_STRING='session').items():
         monkeypatch.setenv(key, setting)
     monkeypatch.delenv('channel_ids', raising=False)
     monkeypatch.delenv('CHANNEL_IDS', raising=False)
@@ -137,21 +137,21 @@ def test_home_assistant_options_fallback(tmp_path, monkeypatch):
     import stremio_addon.core as core
     options = tmp_path / 'options.json'
     options.write_text('''{
-      "port": 9123,
-      "addon_url": "https://telegram.example.com",
-      "api_key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "api_id": 12345,
-      "api_hash": "hash",
-      "user_session_string": "session",
-      "cache_mb": 42,
+      "PORT": 9123,
+      "ADDON_URL": "https://telegram.example.com",
+      "API_KEY": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "API_ID": 12345,
+      "API_HASH": "hash",
+      "USER_SESSION_STRING": "session",
+      "CACHE_MB": 42,
       "CHANNEL_IDS": "-100123,-100456"
     }''')
     real_path = core.Path
     monkeypatch.setattr(core, 'Path', lambda value: options if value == '/data/options.json' else real_path(value))
     monkeypatch.delenv('CHANNEL_IDS', raising=False)
     monkeypatch.delenv('channel_ids', raising=False)
-    for name in ('port', 'addon_url', 'api_key', 'api_id', 'api_hash', 'user_session_string', 'cache_mb',
-                 'PORT', 'ADDON_URL', 'API_KEY', 'API_ID', 'API_HASH', 'USER_SESSION_STRING', 'CACHE_MB'):
+    for name in ('PORT', 'ADDON_URL', 'API_KEY', 'API_ID', 'API_HASH', 'USER_SESSION_STRING', 'CACHE_MB',
+                 'port', 'addon_url', 'api_key', 'api_id', 'api_hash', 'user_session_string', 'cache_mb'):
         monkeypatch.delenv(name, raising=False)
     settings = core.Settings.env()
     assert settings.port == 9123
@@ -165,25 +165,48 @@ def test_home_assistant_options_fallback(tmp_path, monkeypatch):
 def test_environment_overrides_home_assistant_options(tmp_path, monkeypatch):
     import stremio_addon.core as core
     options = tmp_path / 'options.json'
-    options.write_text('{"addon_url":"https://ha.example.com"}')
+    options.write_text('{"ADDON_URL":"https://ha.example.com"}')
     real_path = core.Path
     monkeypatch.setattr(core, 'Path', lambda value: options if value == '/data/options.json' else real_path(value))
-    monkeypatch.setenv('addon_url', 'https://environment.example.com')
-    monkeypatch.setenv('api_key', 'a' * 32)
-    monkeypatch.setenv('api_id', '123')
-    monkeypatch.setenv('api_hash', 'hash')
-    monkeypatch.setenv('user_session_string', 'session')
+    monkeypatch.setenv('ADDON_URL', 'https://environment.example.com')
+    monkeypatch.setenv('API_KEY', 'a' * 32)
+    monkeypatch.setenv('API_ID', '123')
+    monkeypatch.setenv('API_HASH', 'hash')
+    monkeypatch.setenv('USER_SESSION_STRING', 'session')
     assert core.Settings.env().url == 'https://environment.example.com'
+
+
+def test_legacy_home_assistant_options_remain_readable(tmp_path, monkeypatch):
+    import stremio_addon.core as core
+    options = tmp_path / 'options.json'
+    options.write_text('{"addon_url":"https://legacy.example.com",'
+                       '"api_key":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",'
+                       '"api_id":123,"api_hash":"hash",'
+                       '"user_session_string":"session"}')
+    real_path = core.Path
+    monkeypatch.setattr(core, 'Path', lambda value: options if value == '/data/options.json' else real_path(value))
+    for name in ('ADDON_URL', 'API_KEY', 'API_ID', 'API_HASH', 'USER_SESSION_STRING'):
+        monkeypatch.delenv(name, raising=False)
+    assert core.Settings.env().url == 'https://legacy.example.com'
+
+
+def test_lowercase_container_environment_is_ignored(monkeypatch):
+    import stremio_addon.core as core
+    monkeypatch.setattr(core.Path, 'is_file', lambda self: False)
+    monkeypatch.setenv('addon_url', 'https://legacy.example.com')
+    monkeypatch.delenv('ADDON_URL', raising=False)
+    with pytest.raises(ValueError, match='ADDON_URL'):
+        core.Settings.env()
 
 
 def test_debug_port_must_be_separate(monkeypatch):
     import stremio_addon.core as core
     monkeypatch.setattr(core.Path, 'is_file', lambda self: False)
-    for name, value in dict(port='8000', debug_port='8000', addon_url='https://example.com',
-                            api_key='a' * 32, api_id='1', api_hash='hash',
-                            user_session_string='session').items():
+    for name, value in dict(PORT='8000', DEBUG_PORT='8000', ADDON_URL='https://example.com',
+                            API_KEY='a' * 32, API_ID='1', API_HASH='hash',
+                            USER_SESSION_STRING='session').items():
         monkeypatch.setenv(name, value)
-    with pytest.raises(ValueError, match='debug_port'):
+    with pytest.raises(ValueError, match='DEBUG_PORT'):
         Settings.env()
 
 

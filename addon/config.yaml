@@ -17,31 +17,31 @@ init: false
 host_network: true
 timeout: 30
 options:
-  port: 8000
-  debug_enabled: true
-  debug_port: 8001
-  debug_host: "0.0.0.0"
-  addon_url: ""
-  api_key: ""
-  api_id: 0
-  api_hash: ""
-  user_session_string: ""
-  cache_mb: 512
+  PORT: 8000
+  DEBUG_ENABLED: true
+  DEBUG_PORT: 8001
+  DEBUG_HOST: "0.0.0.0"
+  ADDON_URL: ""
+  API_KEY: ""
+  API_ID: 0
+  API_HASH: ""
+  USER_SESSION_STRING: ""
+  CACHE_MB: 512
   CHANNEL_IDS: ""
   AI_SEARCH_ENABLED: false
   GEMINI_API_KEY: ""
   AI_SEARCH_PREFIX_ENABLED: false
 schema:
-  port: port
-  debug_enabled: bool
-  debug_port: port
-  debug_host: str
-  addon_url: url
-  api_key: password
-  api_id: int(1,)
-  api_hash: password
-  user_session_string: password
-  cache_mb: int(0,)
+  PORT: PORT
+  DEBUG_ENABLED: bool
+  DEBUG_PORT: PORT
+  DEBUG_HOST: str
+  ADDON_URL: url
+  API_KEY: password
+  API_ID: int(1,)
+  API_HASH: password
+  USER_SESSION_STRING: password
+  CACHE_MB: int(0,)
   CHANNEL_IDS: str?
   AI_SEARCH_ENABLED: bool
   GEMINI_API_KEY: password?

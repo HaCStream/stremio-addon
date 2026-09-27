@@ -3,8 +3,8 @@ services:
     build: .
     env_file: .env
     ports:
-      - "127.0.0.1:${port:-8000}:${port:-8000}"
-      - "127.0.0.1:${debug_port:-8001}:${debug_port:-8001}"
+      - "127.0.0.1:${PORT:-8000}:${PORT:-8000}"
+      - "127.0.0.1:${DEBUG_PORT:-8001}:${DEBUG_PORT:-8001}"
     volumes:
       - telegram-data:/data
     restart: unless-stopped

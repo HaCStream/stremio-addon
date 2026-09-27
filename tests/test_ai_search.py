@@ -141,8 +141,8 @@ async def test_semantic_lookup_without_shared_words(tmp_path):
 def test_ai_settings_from_environment(tmp_path, monkeypatch):
     import stremio_addon.core as core
     monkeypatch.setattr(core.Path, 'is_file', lambda self: False)
-    for key, value in dict(addon_url='https://example.com', api_key='a' * 32,
-                           api_id='1', api_hash='hash', user_session_string='session',
+    for key, value in dict(ADDON_URL='https://example.com', API_KEY='a' * 32,
+                           API_ID='1', API_HASH='hash', USER_SESSION_STRING='session',
                            AI_SEARCH_ENABLED='true', AI_SEARCH_PREFIX_ENABLED='yes').items():
         monkeypatch.setenv(key, value)
     monkeypatch.delenv('GEMINI_API_KEY', raising=False)
