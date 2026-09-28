@@ -4,9 +4,11 @@
   <img src="stremio_addon/icon.png" alt="Stremio Telegram addon icon" width="180" />
 </p>
 
-**Your Telegram videos, available in Stremio.**
+**Your Telegram videos, available in Stremio / Nuvio.**
 
 A self-hosted addon that connects to your Telegram user account, discovers joined private broadcast channels, and indexes uploaded videos for browsing, searching, and streaming through your server.
+
+Since Stremio and Nuvio use the same underlying addon architecture and manifest format, this addon can work for both apps!
 
 **🔎 Searchable catalog · 🔄 Background indexing · 🧰 Debug dashboard · 🐳 Docker · 🏠 Home Assistant**
 
