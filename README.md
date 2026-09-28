@@ -333,3 +333,7 @@ https://telegram.example.com/YOUR_API_KEY/status
 ```
 
 The `/healthz` endpoint checks that the HTTP server is running; it does not confirm Telegram readiness.
+
+
+Find it useful? You support is welcome!
+https://buymeacoffee.com/hacstudio
