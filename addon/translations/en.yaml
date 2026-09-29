@@ -50,6 +50,11 @@ configuration:
       DEBUG_HOST:
         name: Debug listen address
         description: Address the dashboard binds to. Use 0.0.0.0 for access through the network.
+      SKIP_DEBUG_AUTH:
+        name: Skip debug authentication
+        description: >-
+          Open the debug dashboard without entering the API key. Anyone who can reach
+          the dashboard can view its data, search the index, and request a sync.
 network:
   8000/tcp: Stremio addon endpoint.
   8001/tcp: Debug dashboard endpoint.

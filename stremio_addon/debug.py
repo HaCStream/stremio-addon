@@ -43,6 +43,8 @@ def create_debug_app(runtime):
         return response
 
     def authorize(key):
+        if app.state.runtime.cfg.skip_debug_auth:
+            return
         expected = app.state.runtime.cfg.key
         if not key or not hmac.compare_digest(key.encode(), expected.encode()):
             raise HTTPException(401, 'Invalid API key')
@@ -89,6 +91,10 @@ def create_debug_app(runtime):
     @app.get('/')
     async def index():
         return FileResponse(Path(__file__).with_name('debug.html'))
+
+    @app.get('/api/auth-config')
+    async def auth_config():
+        return {'skip_debug_auth': app.state.runtime.cfg.skip_debug_auth}
 
     @app.get('/api/overview')
     async def overview(x_debug_key: str | None = Header(None)):

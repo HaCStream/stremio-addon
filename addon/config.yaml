@@ -33,6 +33,7 @@ options:
   debug:
     DEBUG_ENABLED: false
     DEBUG_HOST: "0.0.0.0"
+    SKIP_DEBUG_AUTH: false
 schema:
   ADDON_URL: url
   API_KEY: password
@@ -48,3 +49,4 @@ schema:
   debug:
     DEBUG_ENABLED: bool
     DEBUG_HOST: str
+    SKIP_DEBUG_AUTH: bool

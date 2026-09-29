@@ -30,8 +30,9 @@ def test_nested_options_and_translations_cover_schema():
 
 def test_nested_options_reach_application_environment():
     env = {}
-    configure({"debug": {"DEBUG_ENABLED": False},
+    configure({"debug": {"DEBUG_ENABLED": False, "SKIP_DEBUG_AUTH": True},
                "ai": {"AI_SEARCH_ENABLED": True, "GEMINI_API_KEY": "secret"}}, env)
     assert env["DEBUG_ENABLED"] == "False"
+    assert env["SKIP_DEBUG_AUTH"] == "True"
     assert env["AI_SEARCH_ENABLED"] == "True"
     assert env["GEMINI_API_KEY"] == "secret"
