@@ -183,18 +183,19 @@ def test_nested_home_assistant_debug_and_ai_options(tmp_path, monkeypatch):
     options.write_text(json.dumps({
         'ADDON_URL': 'https://ha.example.com', 'API_KEY': 'a' * 32,
         'API_ID': 123, 'API_HASH': 'hash', 'USER_SESSION_STRING': 'session',
-        'debug': {'DEBUG_ENABLED': False},
+        'debug': {'DEBUG_ENABLED': False, 'SKIP_DEBUG_AUTH': True},
         'ai': {'AI_SEARCH_ENABLED': True, 'GEMINI_API_KEY': 'secret',
                'AI_SEARCH_PREFIX_ENABLED': True},
     }))
     real_path = core.Path
     monkeypatch.setattr(core, 'Path', lambda value: options if value == '/data/options.json' else real_path(value))
     for name in ('ADDON_URL', 'API_KEY', 'API_ID', 'API_HASH', 'USER_SESSION_STRING',
-                 'DEBUG_ENABLED', 'DEBUG_PORT', 'AI_SEARCH_ENABLED', 'GEMINI_API_KEY',
+                 'DEBUG_ENABLED', 'DEBUG_PORT', 'SKIP_DEBUG_AUTH', 'AI_SEARCH_ENABLED', 'GEMINI_API_KEY',
                  'AI_SEARCH_PREFIX_ENABLED'):
         monkeypatch.delenv(name, raising=False)
     settings = core.Settings.env()
     assert not settings.debug_enabled
+    assert settings.skip_debug_auth
     assert settings.debug_port == 8001
     assert settings.ai_search_enabled
     assert settings.ai_search_prefix_enabled
@@ -262,6 +263,7 @@ def test_debug_dashboard_is_read_only_and_shows_queried_channels(tmp_path):
     with TestClient(app) as client:
         assert client.get('/').status_code == 200
         assert client.get('/api/overview').status_code == 401
+        assert client.get('/api/auth-config').json() == {'skip_debug_auth': False}
         headers = {'X-Debug-Key': key}
         overview = client.get('/api/overview', headers=headers).json()
         assert overview['debug_port'] == 9123
@@ -281,6 +283,23 @@ def test_debug_dashboard_is_read_only_and_shows_queried_channels(tmp_path):
         assert app.state.runtime.tg.sync_requests == 1
         events = client.get('/api/activity', headers=headers).json()['events']
         assert events[0]['event'] == 'sync_requested'
+
+
+def test_skip_debug_auth_only_applies_to_debug_dashboard(tmp_path):
+    key = 'a' * 32
+    cfg = Settings(8000, 'https://example.com', key, 1, 'hash', 'session', tmp_path,
+                   skip_debug_auth=True)
+    debug_app = create_debug_app(Runtime(cfg, FakeTelegram))
+    with TestClient(debug_app) as client:
+        assert client.get('/api/auth-config').json() == {'skip_debug_auth': True}
+        assert client.get('/api/overview').status_code == 200
+        assert client.get('/api/channels').status_code == 200
+        assert client.get('/api/activity').status_code == 200
+        assert client.get('/api/search', params={'q': 'שם'}).status_code == 200
+        assert client.post('/api/sync').status_code == 202
+    with TestClient(create_app(cfg, FakeTelegram)) as client:
+        assert client.get('/wrong/manifest.json').status_code == 404
+        assert client.get(f'/{key}/manifest.json').status_code == 200
 
 
 def test_http(tmp_path):

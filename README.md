@@ -69,6 +69,7 @@ Set these values in `.env` for Docker Compose. In Home Assistant, enter the corr
 | `USER_SESSION_STRING` | Complete authorized Telethon StringSession from the session generator. | `true` | — | `YOUR_TELETHON_STRING_SESSION` |
 | `DEBUG_ENABLED` | Enable the separate debug dashboard. | `false` | `true` | `false` |
 | `DEBUG_HOST` | Dashboard bind address. Keep the default for Docker port forwarding. | `false` | `0.0.0.0` | `0.0.0.0` |
+| `SKIP_DEBUG_AUTH` | Open the debug dashboard without an API key; anyone with dashboard access can search and request a sync. | `false` | `false` | `true` |
 | `CACHE_MB` | Disk chunk-cache limit in MiB; `0` disables new cache writes. | `false` | `512` | `1024` |
 | `CHANNEL_IDS` | Comma-separated negative IDs limiting which joined private broadcast channels are indexed. Blank selects all eligible channels. | `false` | Empty | `-1001234567890,-1009876543210` |
 | `AI_SEARCH_ENABLED` | Adds the separate **Telegram AI Search** catalog and builds a semantic index in the background. | `false` | `false` | `true` |
@@ -161,6 +162,7 @@ USER_SESSION_STRING=YOUR_TELETHON_STRING_SESSION
 
 DEBUG_ENABLED=true
 DEBUG_HOST=0.0.0.0
+# SKIP_DEBUG_AUTH=false
 CACHE_MB=512
 # CHANNEL_IDS=-1001234567890,-1009876543210
 ```
@@ -273,6 +275,7 @@ USER_SESSION_STRING: "YOUR_TELETHON_STRING_SESSION"
 debug:
   DEBUG_ENABLED: true
   DEBUG_HOST: "0.0.0.0"
+  SKIP_DEBUG_AUTH: false
 CACHE_MB: 512
 CHANNEL_IDS: ""
 ```
@@ -300,7 +303,7 @@ https://telegram.example.com/YOUR_API_KEY/manifest.json
 
 ### 5. Open the dashboard
 
-With `DEBUG_ENABLED: true`, select **Open Web UI** on the add-on page and sign in with your `API_KEY`.
+With `DEBUG_ENABLED: true`, select **Open Web UI** on the add-on page and sign in with your `API_KEY`. Set `SKIP_DEBUG_AUTH: true` under **Debug dashboard** to open it without signing in. Only enable this when access to the debug listener is appropriately restricted; the setting also permits unauthenticated searches and sync requests. The add-on's `API_KEY` remains required for Stremio endpoints.
 
 The button uses the dashboard's mapped host port. You can also open `http://HOME_ASSISTANT_IP:8001` directly, using your chosen host port if you changed the mapping.
 

@@ -50,6 +50,7 @@ class Settings:
     ai_search_enabled: bool = False
     gemini_api_key: str = ''
     ai_search_prefix_enabled: bool = False
+    skip_debug_auth: bool = False
 
     @classmethod
     def env(cls):
@@ -116,12 +117,14 @@ class Settings:
             return value in ('1', 'true', 'yes', 'on')
         ai_enabled = boolean('AI_SEARCH_ENABLED')
         ai_prefix = boolean('AI_SEARCH_PREFIX_ENABLED')
+        skip_debug_auth = boolean('SKIP_DEBUG_AUTH')
         gemini_key = get('GEMINI_API_KEY') if ai_enabled else ''
         if ai_enabled and not gemini_key:
             raise ValueError('GEMINI_API_KEY is required when AI_SEARCH_ENABLED is true')
         return cls(port, url, key, int(get('API_ID')), get('API_HASH'), get('USER_SESSION_STRING'),
                    Path(get('DATA_DIR', default_data)), int(get('CACHE_MB', '512')) * 1024**2,
-                   channel_ids, debug_port, debug_host, debug_enabled, ai_enabled, gemini_key, ai_prefix)
+                   channel_ids, debug_port, debug_host, debug_enabled, ai_enabled, gemini_key, ai_prefix,
+                   skip_debug_auth)
 
 
 class Tokens:

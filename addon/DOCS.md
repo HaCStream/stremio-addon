@@ -51,6 +51,7 @@ Set these options in the add-on's Configuration tab:
 | `ADDON_URL` | External HTTPS base URL of your reverse proxy |
 | `DEBUG_ENABLED` | Enable the read-only debug dashboard (default `true`) |
 | `DEBUG_HOST` | Dashboard listen address (default `0.0.0.0`) |
+| `SKIP_DEBUG_AUTH` | Open the dashboard without a key (default `false`); anyone with access can search and request a sync |
 | `API_KEY` | At least 32 random URL-safe characters |
 | `API_ID` | Positive Telegram application ID |
 | `API_HASH` | Telegram application hash |
@@ -100,6 +101,9 @@ The debug dashboard is available through the host port mapped to 8001. Sign in w
 configured API key to inspect channels, indexing progress, recent searches, and
 read-only search results. It does not expose playback URLs and does not use
 `ADDON_URL` for its own requests.
+Set `SKIP_DEBUG_AUTH: true` under the debug options to open without a key. Keep
+dashboard network access restricted when using this option. The Stremio API key
+is still required for addon endpoints.
 The add-on page's **Open Web UI** button opens the dashboard on its standard
 port by default. Use **Sync now** in the dashboard after joining a channel or adding a video
 to trigger channel discovery and catch-up indexing immediately.
