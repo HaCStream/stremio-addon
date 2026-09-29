@@ -1,5 +1,16 @@
 # Changelog
 
+<!-- release:1.4.5:start -->
+## 1.4.5
+
+## What's Changed
+* chore: release Home Assistant add-on 1.4.4 [skip ci] by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/14
+* Allow optional keyless debug dashboard access by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/15
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.4.4...v1.4.5
+<!-- release:1.4.5:end -->
+
 <!-- release:1.4.4:start -->
 ## 1.4.4
 
