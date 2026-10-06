@@ -31,8 +31,6 @@ class Runtime:
                 self.ai = AISearch(self.cfg, self.store) if self.cfg.ai_search_enabled else None
                 try:
                     await self.tg.start()
-                    if self.ai:
-                        await self.ai.start()
                 except Exception:
                     if self.ai:
                         await self.ai.close()

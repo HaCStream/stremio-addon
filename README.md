@@ -72,7 +72,7 @@ Set these values in `.env` for Docker Compose. In Home Assistant, enter the corr
 | `SKIP_DEBUG_AUTH` | Open the debug dashboard without an API key; anyone with dashboard access can search and request a sync. | `false` | `false` | `true` |
 | `CACHE_MB` | Disk chunk-cache limit in MiB; `0` disables new cache writes. | `false` | `512` | `1024` |
 | `CHANNEL_IDS` | Comma-separated negative IDs limiting which joined private broadcast channels are indexed. Blank selects all eligible channels. | `false` | Empty | `-1001234567890,-1009876543210` |
-| `AI_SEARCH_ENABLED` | Adds the separate **Telegram AI Search** catalog and builds a semantic index in the background. | `false` | `false` | `true` |
+| `AI_SEARCH_ENABLED` | Adds separate **Telegram AI Movies** and **Telegram AI Series** catalogs using online search. | `false` | `false` | `true` |
 | `GEMINI_API_KEY` | Gemini API credential; required only when AI search is enabled. | Conditional | Empty | `YOUR_GEMINI_API_KEY` |
 | `AI_SEARCH_PREFIX_ENABLED` | Require a leading `AI` word (case insensitive) for searches in the AI catalog. | `false` | `false` | `true` |
 | `DATA_DIR` | Persistent index and cache directory. Home Assistant manages this automatically; it is not a UI option. | `false` | `/data` standalone; `/data/stremio` in Home Assistant | `/data` |
@@ -87,11 +87,17 @@ Selecting a channel does not join it. Public channels and groups are excluded. R
 
 ### ✨ AI search
 
-Set `AI_SEARCH_ENABLED=true` and provide `GEMINI_API_KEY` to add a separate **Telegram AI Search** catalog to Stremio. The existing **Telegram Videos** catalog keeps its ordinary text search. With `AI_SEARCH_PREFIX_ENABLED=true`, enter a search such as `AI someone relives the same day` in the AI catalog; searches without a separate leading `AI` word return no results there and do not call Gemini. The prefix is case insensitive.
+Set `AI_SEARCH_ENABLED=true` and provide `GEMINI_API_KEY` to add separate **Telegram AI Movies** and **Telegram AI Series** catalogs. The existing **Telegram Videos** catalog keeps its ordinary text search. Reinstall or refresh the addon in your client after upgrading to discover the new catalogs.
 
-AI search generates and stores embeddings for indexed titles, filenames, and caption excerpts. For entries without a meaningful caption, it may ask Gemini for a short description when the title can be identified confidently. This background indexing uses Gemini even if prefix mode is enabled. Search queries also use Gemini to retrieve and rank indexed entries. Only indexed entries in currently selected channels can be returned. Titles and caption excerpts are sent to Gemini; Telegram credentials, channel IDs, playback URLs, and video bytes are not. The debug dashboard displays indexing progress. New and edited entries are indexed incrementally, and search works with already processed entries while the initial index fills.
+With `AI_SEARCH_PREFIX_ENABLED=true`, enter a search such as `AI someone relives the same day`. A separate leading `AI` word is required, case insensitive (`AI`, `Ai`, `ai`, and `aI` all work). Searches without that prefix return no AI results and make no Gemini request. The debug AI search form follows the same rule. When prefix mode is disabled, descriptions work without a prefix; a supplied prefix is still stripped.
 
-If Gemini returns HTTP 429, the add-on pauses all Gemini requests with a saved, increasing cooldown that survives restarts. During that pause, the AI catalog falls back to local text matches. The debug dashboard shows the retry countdown. If 429s continue after the cooldown, check your project's model quotas in Google AI Studio.
+Gemini uses Google Search to find up to five movie titles and five series titles matching the description. The addon searches those titles in the ordinary Telegram index and returns only normalized title matches in currently selected channels. The movie and series catalogs share one short-lived cached discovery response. Availability is checked locally on every search; category assignments come from Gemini and do not independently classify Telegram files. Results depend on online discovery and title naming, so aliases or translated filenames may not match.
+
+No embeddings, description enrichment, or background AI indexing are generated. Only your search description is sent to Gemini; indexed titles, captions, Telegram credentials, channel IDs, playback URLs, and video bytes are not sent. Google Search grounding may have its own cost and quota in your Gemini project.
+
+The debug page retains an AI search form with separate Movies and Series results. **Cleanup** permanently removes legacy embeddings and AI-generated descriptions, drops their old tables, and reclaims database space. Telegram videos, search entries, checkpoints, mappings, and credentials are preserved. Cleanup also works when AI search is disabled, and can be repeated safely.
+
+If Gemini returns HTTP 429, the addon pauses Gemini requests with a saved, increasing cooldown that survives restarts. The debug search displays failures and cooldown errors. The AI catalogs return no results during failures rather than substituting unrelated text matches; ordinary Telegram search remains available.
 
 ## 🔑 Prepare your credentials
 

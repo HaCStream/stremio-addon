@@ -106,8 +106,13 @@ def create_app_with_runtime(runtime):
     def url(row, scope):
         return f'{app.state.cfg.url}/{scope}/{app.state.tokens.sign(row["id"], scope)}'
 
-    def meta(row):
-        return {'id': row['id'], 'type': 'movie', 'name': row['title'], 'posterShape': 'landscape', 'poster': url(row, 'thumb'), 'description': row['caption'] + '\n\n' + row['channel_name'], 'releaseInfo': str(row['year'] or ''), 'behaviorHints': {'defaultVideoId': row['id']}}
+    def meta(row, kind='movie'):
+        result = {'id': row['id'], 'type': kind, 'name': row['title'], 'posterShape': 'landscape', 'poster': url(row, 'thumb'), 'description': row['caption'] + '\n\n' + row['channel_name'], 'releaseInfo': str(row['year'] or ''), 'behaviorHints': {'defaultVideoId': row['id']}}
+        if kind == 'series':
+            result['videos'] = [{'id': row['id'], 'title': row['title'],
+                                 'season': row['season'] if row['season'] is not None else 1,
+                                 'episode': row['episode'] if row['episode'] is not None else 1}]
+        return result
 
     @app.get('/healthz')
     async def health():
@@ -118,13 +123,16 @@ def create_app_with_runtime(runtime):
         auth(key)
         catalogs = [{'type': 'movie', 'id': 'telegram', 'name': 'Telegram Videos', 'extra': [{'name': 'search', 'isRequired': False}, {'name': 'skip', 'isRequired': False}]}]
         if app.state.cfg.ai_search_enabled:
-            catalogs.append({'type': 'movie', 'id': 'telegram-ai', 'name': 'Telegram AI Search',
-                             'extra': [{'name': 'search', 'isRequired': True}, {'name': 'skip', 'isRequired': False}]})
+            for kind, name in (('movie', 'Movies'), ('series', 'Series')):
+                catalogs.append({'type': kind, 'id': 'telegram-ai-' + kind,
+                                 'name': 'Telegram AI ' + name,
+                                 'extra': [{'name': 'search', 'isRequired': True},
+                                           {'name': 'skip', 'isRequired': False}]})
         return {'id': 'community.private.telegram', 'version': get_version(), 'name': 'Private Telegram Videos',
                 'description': 'Stream your private Telegram videos',
                 'logo': 'https://raw.githubusercontent.com/HaCStream/stremio-addon/main/stremio_addon/icon.png',
                 'types': ['movie', 'series'],
-                'resources': [{'name': 'catalog', 'types': ['movie']}, {'name': 'meta', 'types': ['movie'], 'idPrefixes': ['tg:']}, {'name': 'stream', 'types': ['movie', 'series'], 'idPrefixes': ['tg:', 'tt']}],
+                'resources': [{'name': 'catalog', 'types': ['movie', 'series']}, {'name': 'meta', 'types': ['movie', 'series'], 'idPrefixes': ['tg:']}, {'name': 'stream', 'types': ['movie', 'series'], 'idPrefixes': ['tg:', 'tt']}],
                 'catalogs': catalogs}
 
     @app.get('/{key}/catalog/{kind}/{catalog_id}.json')
@@ -135,7 +143,8 @@ def create_app_with_runtime(runtime):
         query = args.get('search', [''])[0][:500]
         interaction(request, 'catalog_search' if query else 'catalog_browse', query=query,
                     type=kind, catalog=catalog_id, result_count=0)
-        if kind != 'movie' or catalog_id not in ('telegram', 'telegram-ai'):
+        ai_catalog = kind in ('movie', 'series') and catalog_id == 'telegram-ai-' + kind
+        if not ai_catalog and not (kind == 'movie' and catalog_id == 'telegram'):
             return {'metas': []}
         try:
             skip = int(args.get('skip', ['0'])[0])
@@ -144,30 +153,30 @@ def create_app_with_runtime(runtime):
         except ValueError:
             raise HTTPException(400, 'Invalid skip') from None
         request.state.interaction['skip'] = skip
-        if catalog_id == 'telegram-ai':
+        if ai_catalog:
             clean = ai_query(query, app.state.cfg.ai_search_prefix_enabled)
             if not app.state.cfg.ai_search_enabled or not clean:
                 rows = []
             else:
                 try:
-                    rows = await app.state.runtime.ai.search(clean, set(app.state.tg.channels), skip)
+                    rows = await app.state.runtime.ai.search(clean, set(app.state.tg.channels), skip, kind)
                     request.state.interaction['ai_status'] = 'ok'
                 except Exception as exc:
                     request.state.interaction['ai_status'] = type(exc).__name__
-                    rows = [r for r in app.state.store.catalog(clean, skip) if r['channel'] in app.state.tg.channels]
+                    rows = []
         else:
             rows = [r for r in app.state.store.catalog(query, skip) if r['channel'] in app.state.tg.channels]
         results(request, rows)
-        return {'metas': [meta(r) for r in rows]}
+        return {'metas': [meta(r, kind) for r in rows]}
 
     @app.get('/{key}/meta/{kind}/{item}.json')
     async def detail(key, kind, item, request: Request):
         auth(key)
         interaction(request, 'meta_lookup', type=kind, item=item)
         row = app.state.store.get(item)
-        rows = [row] if kind == 'movie' and row and row['channel'] in app.state.tg.channels else []
+        rows = [row] if kind in ('movie', 'series') and row and row['channel'] in app.state.tg.channels else []
         results(request, rows)
-        return {'meta': meta(row) if rows else None}
+        return {'meta': meta(row, kind) if rows else None}
 
     @app.get('/{key}/stream/{kind}/{item}.json')
     async def sources(key, kind, item, request: Request):
@@ -178,7 +187,7 @@ def create_app_with_runtime(runtime):
             return {'streams': []}
         if item.startswith('tg:'):
             row = app.state.store.get(item)
-            rows = [row] if row and kind == 'movie' else []
+            rows = [row] if row else []
         else:
             rows = await app.state.metadata.match(app.state.store, kind, item)
         rows = [r for r in rows if r['channel'] in app.state.tg.channels]

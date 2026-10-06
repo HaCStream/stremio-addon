@@ -92,11 +92,17 @@ https://YOUR_DOMAIN/YOUR_API_KEY/manifest.json
 The protected `/<your-api-key>/status` endpoint shows Telegram indexing progress.
 Optional AI search is configured with `AI_SEARCH_ENABLED`, `GEMINI_API_KEY`, and
 `AI_SEARCH_PREFIX_ENABLED` under **AI search** in the Configuration tab. Debug
-settings are grouped under **Debug dashboard**. Enabling AI adds a separate
-Telegram AI Search catalog and starts background Gemini embedding calls. Prefix
-mode restricts query-time calls to searches beginning with `AI` or `ai`; it does
-not disable initial embedding calls. Titles and short caption excerpts are sent
-to Gemini. The debug dashboard shows semantic indexing progress.
+settings are grouped under **Debug dashboard**. Enabling AI adds separate
+**Telegram AI Movies** and **Telegram AI Series** catalogs. Gemini uses Google
+Search to find up to five titles per category, then the addon returns only titles
+matched in the local Telegram index. Prefix mode requires a separate leading
+`AI` word (case insensitive), including in the debug search form. Only the search
+description is sent to Gemini; no indexed content or video data is sent.
+No background AI indexing or embeddings are generated. The debug search displays
+separate movie and series matches. **Cleanup** removes legacy embeddings and
+generated descriptions without removing Telegram entries, and reclaims database
+space. The new catalogs may require reinstalling or refreshing the addon in your
+client. Google Search grounding uses your Gemini project's quota and billing.
 The debug dashboard is available through the host port mapped to 8001. Sign in with the
 configured API key to inspect channels, indexing progress, recent searches, and
 read-only search results. It does not expose playback URLs and does not use
