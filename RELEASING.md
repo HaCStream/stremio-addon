@@ -33,15 +33,29 @@ already has that version. An empty release body produces a version heading with
 no invented notes. This synchronization runs in the tag release workflow; editing
 release notes later requires re-running its publish job.
 
-The automated config/changelog commit uses the workflow's `GITHUB_TOKEN` and includes
-`[skip ci]`, so it does not trigger CI. Other configuration or code edits still
+The automated config/changelog commit uses a dedicated GitHub App installation
+token and includes `[skip ci]`, so it does not trigger CI. Other configuration or code edits still
 receive normal CI. The release tag remains on its original commit.
 
 The updater preserves unrelated configuration, retries concurrent edits, and
 never downgrades the version advertised by Home Assistant. If the current
 version is newer, it skips the older release. Re-running the release is safe for
-both files. Repository rules must permit the workflow token to update
-`main`; the workflow does not bypass branch protection.
+both files.
+
+Configure the release App before publishing:
+
+- Store its client ID in the Actions variable `HAC_RELEASE_CI_APP_CLIENT_ID`.
+- Store its entire private key in the Actions secret `HAC_RELEASE_CI_APP_PRIVATE_KEY`.
+- Install the App on this repository with **Contents: Read and write** permission.
+- Add the App to every applicable `main` ruleset bypass list with **Always allow**,
+  so the updater can commit directly without a pull request. Any additional classic
+  branch protections must also permit the App's update.
+
+The App token is generated immediately before the version/changelog update and
+is scoped to this repository by the token action's defaults. GHCR publishing and
+GitHub Release creation continue to use the workflow's built-in `GITHUB_TOKEN`.
+Rerunning a failed release uses the workflow from the original tag, so a tag
+created before this change will not pick up the new authentication automatically.
 
 Tags such as `v1.1.0-rc.1` are supported and map to `1.1.0-rc.1`. Build metadata
 such as `+build.1` is rejected because `+` is not valid in Docker tags. Tags
