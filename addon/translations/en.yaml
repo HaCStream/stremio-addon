@@ -27,19 +27,19 @@ configuration:
       joined private broadcast channels.
   ai:
     name: AI search
-    description: Configure optional Gemini-powered semantic search.
+    description: Configure optional Gemini-powered online title search.
     fields:
       AI_SEARCH_ENABLED:
         name: Enable AI search
-        description: Index titles for semantic search and show the Telegram AI Search catalog.
+        description: Search online and show separate Telegram AI Movies and Telegram AI Series catalogs.
       GEMINI_API_KEY:
         name: Gemini API key
-        description: Gemini key used to generate embeddings for indexed titles and search queries.
+        description: Gemini key used for online discovery of titles matching your search description.
       AI_SEARCH_PREFIX_ENABLED:
         name: Require AI search prefix
         description: >-
-          Only send search queries to Gemini when they begin with AI or ai. Initial
-          indexing still sends titles and short caption excerpts to Gemini.
+          Only send search queries to Gemini when they begin with a separate AI word,
+          case insensitive. Applies to both the catalogs and debug AI search.
   debug:
     name: Debug dashboard
     description: Configure the dashboard for inspecting indexing and search activity.

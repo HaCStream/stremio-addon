@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse
 
+from .ai_search import ai_query, GeminiCooldown
 from .core import normalize
 from .version import get_version
 
@@ -113,7 +114,6 @@ def create_debug_app(runtime):
             'cache_mb': shared.cfg.cache_bytes // 1024**2,
             'ai_search_enabled': shared.cfg.ai_search_enabled,
             'ai_search_prefix_enabled': shared.cfg.ai_search_prefix_enabled,
-            'ai_index': shared.ai.snapshot() if shared.ai else None,
         }
 
     @app.get('/api/channels')
@@ -134,6 +134,14 @@ def create_debug_app(runtime):
         shared.record({'event': 'sync_requested', 'status': 202})
         return {'accepted': True}
 
+    @app.post('/api/cleanup')
+    async def cleanup(x_debug_key: str | None = Header(None)):
+        authorize(x_debug_key)
+        shared = app.state.runtime
+        removed = shared.store.cleanup_ai_data()
+        shared.record({'event': 'cleanup', 'status': 200})
+        return {'removed_records': sum(removed.values()), 'removed': removed}
+
     @app.get('/api/search')
     async def search(
         q: str = Query('', max_length=500),
@@ -151,17 +159,16 @@ def create_debug_app(runtime):
         if mode == 'ai':
             if not shared.ai:
                 raise HTTPException(409, 'AI features are not enabled')
-            # The dedicated debug form explicitly selects AI, even when the
-            # Stremio catalog requires a prefix for automatic routing.
-            clean = q.strip()
-            if not clean:
-                matched = []
-            else:
-                try:
-                    rows = await shared.ai.search(clean, allowed, skip)
-                    matched = [(row, 'AI search') for row in rows]
-                except Exception:
-                    matched = []
+            clean = ai_query(q, shared.cfg.ai_search_prefix_enabled)
+            try:
+                grouped = {name: await shared.ai.search(clean, allowed, skip, media_type) if clean else []
+                           for name, media_type in (('movies', 'movie'), ('series', 'series'))}
+            except GeminiCooldown:
+                raise HTTPException(429, 'Gemini rate limited; retry in '
+                                    + str(shared.ai.cooldown_remaining()) + ' seconds') from None
+            except Exception:
+                raise HTTPException(502, 'AI search failed; check Gemini availability and configuration') from None
+            matched = [(row, 'AI online title match') for rows in grouped.values() for row in rows]
         elif mode == 'text':
             rows = shared.store.catalog(q, skip, 100) if q.strip() else []
             matched = [(row, 'full-text index') for row in rows if row['channel'] in allowed]
@@ -191,6 +198,9 @@ def create_debug_app(runtime):
             'result_count': len(items), 'duration_ms': duration, 'results': items,
             'channels_queried': available, 'results_by_channel': per_channel,
             'resolved_aliases': aliases, 'resolved_year': resolved_year,
+            **({'movies': [result_row(row, 'AI online title match') for row in grouped['movies']],
+                'series': [result_row(row, 'AI online title match') for row in grouped['series']]}
+               if mode == 'ai' else {}),
         }
 
     return app

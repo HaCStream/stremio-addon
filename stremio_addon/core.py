@@ -179,10 +179,6 @@ class Store:
         CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(id UNINDEXED, text, tokenize='unicode61');
         CREATE TABLE IF NOT EXISTS checkpoints(channel INTEGER PRIMARY KEY, oldest INTEGER, newest INTEGER, complete INTEGER DEFAULT 0);
         CREATE TABLE IF NOT EXISTS mappings(id TEXT PRIMARY KEY, imdb TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS ai_embeddings(id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL,
-          model TEXT NOT NULL, vector BLOB NOT NULL);
-        CREATE TABLE IF NOT EXISTS ai_descriptions(title_key TEXT PRIMARY KEY,
-          description TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS ai_rate_limit(id INTEGER PRIMARY KEY CHECK (id=1),
           retry_at REAL NOT NULL, strikes INTEGER NOT NULL);
         ''')
@@ -190,9 +186,6 @@ class Store:
     def upsert(self, row):
         row = dict(row, search=normalize(' '.join(str(row.get(k) or '') for k in ('title', 'filename', 'caption'))))
         with self.db:
-            previous = self.db.execute('SELECT title,filename,caption FROM videos WHERE id=?', (row['id'],)).fetchone()
-            if previous and any((previous[k] or '') != (row.get(k) or '') for k in ('title', 'filename', 'caption')):
-                self.db.execute('DELETE FROM ai_embeddings WHERE id=?', (row['id'],))
             self.db.execute('INSERT OR REPLACE INTO videos (' + ','.join(row) + ') VALUES (' + ','.join('?' for _ in row) + ')', list(row.values()))
             self.db.execute('DELETE FROM search WHERE id=?', (row['id'],))
             self.db.execute('INSERT INTO search VALUES (?,?)', (row['id'], row['search']))
@@ -201,7 +194,6 @@ class Store:
         with self.db:
             self.db.execute('DELETE FROM videos WHERE id=?', (item,))
             self.db.execute('DELETE FROM search WHERE id=?', (item,))
-            self.db.execute('DELETE FROM ai_embeddings WHERE id=?', (item,))
 
     def get(self, item):
         row = self.db.execute('SELECT * FROM videos WHERE id=?', (item,)).fetchone()
@@ -215,6 +207,34 @@ class Store:
         else:
             rows = self.db.execute('SELECT * FROM videos ORDER BY date DESC,id LIMIT ? OFFSET ?', (limit, skip))
         return [dict(r) for r in rows]
+
+    def title_matches(self, title, allowed):
+        terms = normalize(title).split()[:30]
+        if not terms or not allowed:
+            return []
+        expression = ' AND '.join('"' + t + '"*' for t in terms)
+        placeholders = ','.join('?' for _ in allowed)
+        rows = self.db.execute(
+            'SELECT v.* FROM videos v JOIN search s ON s.id=v.id '
+            'WHERE s.text MATCH ? AND v.channel IN (' + placeholders + ') '
+            'ORDER BY v.date DESC,v.id', (expression, *sorted(allowed)))
+        return [dict(row) for row in rows
+                if normalize(title) in {normalize(alias) for alias in re.split(r'[/|\n]', row['title'])}]
+
+    def cleanup_ai_data(self):
+        # Legacy tables are never recreated. Reclaim their pages and clear WAL
+        # content so embedding blobs do not remain in the database files.
+        removed = {}
+        self.db.execute('PRAGMA secure_delete=ON')
+        with self.db:
+            for table in ('ai_embeddings', 'ai_descriptions'):
+                exists = self.db.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
+                removed[table] = self.db.execute('SELECT count(*) FROM ' + table).fetchone()[0] if exists else 0
+                self.db.execute('DROP TABLE IF EXISTS ' + table)
+        self.db.execute('VACUUM')
+        self.db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+        return removed
 
     def explicit(self, imdb):
         return [dict(r) for r in self.db.execute('SELECT v.*, COALESCE(m.imdb,v.imdb) AS mapped FROM videos v LEFT JOIN mappings m ON m.id=v.id WHERE COALESCE(m.imdb,v.imdb)=?', (imdb,))]
