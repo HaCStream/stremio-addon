@@ -1,5 +1,16 @@
 # Changelog
 
+<!-- release:1.5.0:start -->
+## 1.5.0
+
+## What's Changed
+* Replace AI embeddings with online title discovery and split catalogs by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/16
+* Use release App token to update Home Assistant metadata by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/17
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.4.5...v1.5.0
+<!-- release:1.5.0:end -->
+
 <!-- release:1.4.5:start -->
 ## 1.4.5
 
