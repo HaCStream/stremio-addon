@@ -73,8 +73,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: python scripts/release_version.py release
+      - name: Generate Home Assistant release update token
+        id: release-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.HAC_RELEASE_CI_APP_CLIENT_ID }}
+          private-key: ${{ secrets.HAC_RELEASE_CI_APP_PRIVATE_KEY }}
       - name: Update Home Assistant version and changelog without triggering CI
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: python scripts/release_version.py update
