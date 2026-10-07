@@ -114,6 +114,7 @@ def create_debug_app(runtime):
             'cache_mb': shared.cfg.cache_bytes // 1024**2,
             'ai_search_enabled': shared.cfg.ai_search_enabled,
             'ai_search_prefix_enabled': shared.cfg.ai_search_prefix_enabled,
+            'require_dot_suffix_for_ai_search': shared.cfg.require_dot_suffix_for_ai_search,
         }
 
     @app.get('/api/channels')
@@ -159,7 +160,8 @@ def create_debug_app(runtime):
         if mode == 'ai':
             if not shared.ai:
                 raise HTTPException(409, 'AI features are not enabled')
-            clean = ai_query(q, shared.cfg.ai_search_prefix_enabled)
+            clean = ai_query(q, shared.cfg.ai_search_prefix_enabled,
+                             shared.cfg.require_dot_suffix_for_ai_search)
             try:
                 grouped = {name: await shared.ai.search(clean, allowed, skip, media_type) if clean else []
                            for name, media_type in (('movies', 'movie'), ('series', 'series'))}

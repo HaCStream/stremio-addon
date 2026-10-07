@@ -154,7 +154,8 @@ def create_app_with_runtime(runtime):
             raise HTTPException(400, 'Invalid skip') from None
         request.state.interaction['skip'] = skip
         if ai_catalog:
-            clean = ai_query(query, app.state.cfg.ai_search_prefix_enabled)
+            clean = ai_query(query, app.state.cfg.ai_search_prefix_enabled,
+                             app.state.cfg.require_dot_suffix_for_ai_search)
             if not app.state.cfg.ai_search_enabled or not clean:
                 rows = []
             else:

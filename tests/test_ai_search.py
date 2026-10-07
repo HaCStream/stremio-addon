@@ -17,20 +17,38 @@ def item(id='tg:-100:1', title='Groundhog Day', caption=''):
                 imdb=None, quality='', file_id='1')
 
 
-def config(tmp_path, prefix=False):
+def config(tmp_path, prefix=False, dot_suffix=True):
     return Settings(8000, 'https://example.com', 'a' * 32, 1, 'hash', 'session',
                     tmp_path, ai_search_enabled=True, gemini_api_key='secret',
-                    ai_search_prefix_enabled=prefix)
+                    ai_search_prefix_enabled=prefix,
+                    require_dot_suffix_for_ai_search=dot_suffix)
 
 
 def test_prefix():
     for prefix in ('AI', 'Ai', 'ai', 'aI'):
-        assert ai_query(prefix + ' A Repeating Day', True) == 'A Repeating Day'
-    assert ai_query('ai\tמחר', True) == 'מחר'
+        assert ai_query(prefix + ' A Repeating Day.', True) == 'A Repeating Day'
+    assert ai_query('ai\tמחר.', True) == 'מחר'
     assert ai_query('airplane', True) is None
-    assert ai_query('aI', True) == ''
+    assert ai_query('aI.', True) == ''
     assert ai_query('ordinary search', True) is None
-    assert ai_query('ordinary search', False) == 'ordinary search'
+    assert ai_query('ordinary search.', False) == 'ordinary search'
+
+
+@pytest.mark.parametrize(('text', 'prefix', 'required', 'expected'), [
+    ('AI long description', True, True, None),
+    ('AI sentence. more text', True, True, None),
+    ('  Ai long description.  ', True, True, 'long description'),
+    ('long description.', False, True, 'long description'),
+    ('long description.', True, True, None),
+    ('AI .', True, True, ''),
+    ('.', False, True, ''),
+    ('', False, True, None),
+    ('AI long description', True, False, 'long description'),
+    ('long description', False, False, 'long description'),
+    ('AI long description.', True, False, 'long description.'),
+])
+def test_dot_suffix(text, prefix, required, expected):
+    assert ai_query(text, prefix, required) == expected
 
 
 def test_ai_settings_from_environment(tmp_path, monkeypatch):
@@ -40,6 +58,7 @@ def test_ai_settings_from_environment(tmp_path, monkeypatch):
                            API_ID='1', API_HASH='hash', USER_SESSION_STRING='session',
                            AI_SEARCH_ENABLED='true', AI_SEARCH_PREFIX_ENABLED='yes').items():
         monkeypatch.setenv(key, value)
+    monkeypatch.delenv('REQUIRE_DOT_SUFFIX_FOR_AI_SEARCH', raising=False)
     monkeypatch.delenv('GEMINI_API_KEY', raising=False)
     with pytest.raises(ValueError, match='GEMINI_API_KEY'):
         Settings.env()
@@ -47,6 +66,13 @@ def test_ai_settings_from_environment(tmp_path, monkeypatch):
     settings = Settings.env()
     assert settings.ai_search_enabled and settings.ai_search_prefix_enabled
     assert settings.gemini_api_key == 'secret'
+    assert settings.require_dot_suffix_for_ai_search
+    monkeypatch.setenv('REQUIRE_DOT_SUFFIX_FOR_AI_SEARCH', 'false')
+    assert not Settings.env().require_dot_suffix_for_ai_search
+    monkeypatch.setenv('REQUIRE_DOT_SUFFIX_FOR_AI_SEARCH', 'maybe')
+    with pytest.raises(ValueError, match='REQUIRE_DOT_SUFFIX_FOR_AI_SEARCH'):
+        Settings.env()
+    monkeypatch.delenv('REQUIRE_DOT_SUFFIX_FOR_AI_SEARCH')
     monkeypatch.setenv('AI_SEARCH_PREFIX_ENABLED', 'maybe')
     with pytest.raises(ValueError, match='AI_SEARCH_PREFIX_ENABLED'):
         Settings.env()
@@ -102,8 +128,10 @@ class FakeTelegram:
         pass
 
 
-def test_catalog_types_prefix_playback_and_errors(tmp_path):
-    cfg = config(tmp_path, prefix=True)
+@pytest.mark.parametrize('dot_suffix', [True, False])
+def test_catalog_types_prefix_playback_and_errors(tmp_path, dot_suffix):
+    cfg = config(tmp_path, prefix=True, dot_suffix=dot_suffix)
+    suffix = '.' if dot_suffix else ''
     runtime = Runtime(cfg, FakeTelegram)
     with TestClient(create_app_with_runtime(runtime)) as client:
         manifest = client.get(f'/{cfg.key}/manifest.json').json()
@@ -118,8 +146,13 @@ def test_catalog_types_prefix_playback_and_errors(tmp_path):
             return f'/{cfg.key}/catalog/{kind}/telegram-ai-{kind}/search=' + quote(query, safe='') + '.json'
         assert client.get(path('movie', 'repeating day')).json()['metas'] == []
         assert not calls
-        movies = client.get(path('movie', 'Ai repeating day')).json()['metas']
-        series = client.get(path('series', 'AI repeating day')).json()['metas']
+        if dot_suffix:
+            for kind in ('movie', 'series'):
+                for query in ('Ai repeating', 'Ai repeating day', 'Ai .', '.', ''):
+                    assert client.get(path(kind, query)).json()['metas'] == []
+            assert not calls
+        movies = client.get(path('movie', 'Ai repeating day' + suffix)).json()['metas']
+        series = client.get(path('series', 'AI repeating day' + suffix)).json()['metas']
         assert [m['name'] for m in movies] == ['Groundhog Day']
         assert [(m['name'], m['type']) for m in series] == [('Russian Doll', 'series')]
         assert calls == ['repeating day']
@@ -131,7 +164,7 @@ def test_catalog_types_prefix_playback_and_errors(tmp_path):
         async def fail(query):
             raise ValueError('private upstream error')
         runtime.ai.discover = fail
-        assert client.get(path('movie', 'ai Groundhog')).json()['metas'] == []
+        assert client.get(path('movie', 'ai Groundhog' + suffix)).json()['metas'] == []
         assert client.get(f'/{cfg.key}/catalog/movie/telegram/search=Groundhog.json').json()['metas']
 
 
@@ -191,9 +224,11 @@ async def test_invalid_response(tmp_path, answer):
     store.db.close()
 
 
-def test_debug_cleanup_search_and_no_embedding_state(tmp_path):
+@pytest.mark.parametrize('dot_suffix', [True, False])
+def test_debug_cleanup_search_and_no_embedding_state(tmp_path, dot_suffix):
     from stremio_addon.debug import create_debug_app
-    cfg = config(tmp_path, prefix=True)
+    cfg = config(tmp_path, prefix=True, dot_suffix=dot_suffix)
+    suffix = '.' if dot_suffix else ''
     runtime = Runtime(cfg, FakeTelegram)
     with TestClient(create_debug_app(runtime)) as client:
         headers = {'X-Debug-Key': cfg.key}
@@ -217,14 +252,19 @@ def test_debug_cleanup_search_and_no_embedding_state(tmp_path):
         runtime.ai.discover = discover
         assert client.get('/api/search', params={'mode': 'ai', 'q': 'repeating day'}, headers=headers).json()['results'] == []
         assert not calls
-        result = client.get('/api/search', params={'mode': 'ai', 'q': 'aI repeating day'}, headers=headers).json()
+        assert client.get('/api/overview', headers=headers).json()['require_dot_suffix_for_ai_search'] == dot_suffix
+        if dot_suffix:
+            for query in ('AI repeating', 'AI repeating day', 'AI .', '.', ''):
+                assert client.get('/api/search', params={'mode': 'ai', 'q': query}, headers=headers).json()['results'] == []
+            assert not calls
+        result = client.get('/api/search', params={'mode': 'ai', 'q': 'aI repeating day' + suffix}, headers=headers).json()
         assert [r['title'] for r in result['movies']] == ['Groundhog Day']
         assert [r['title'] for r in result['series']] == ['Russian Doll']
         assert calls == ['repeating day']
         async def fail(query):
             raise ValueError('private upstream error')
         runtime.ai.discover = fail
-        response = client.get('/api/search', params={'mode': 'ai', 'q': 'AI new query'}, headers=headers)
+        response = client.get('/api/search', params={'mode': 'ai', 'q': 'AI new query' + suffix}, headers=headers)
         assert response.status_code == 502
         assert 'private upstream' not in response.text
         html = client.get('/').text

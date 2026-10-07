@@ -90,14 +90,21 @@ https://YOUR_DOMAIN/YOUR_API_KEY/manifest.json
 ```
 
 The protected `/<your-api-key>/status` endpoint shows Telegram indexing progress.
-Optional AI search is configured with `AI_SEARCH_ENABLED`, `GEMINI_API_KEY`, and
-`AI_SEARCH_PREFIX_ENABLED` under **AI search** in the Configuration tab. Debug
-settings are grouped under **Debug dashboard**. Enabling AI adds separate
+Optional AI search is configured with `AI_SEARCH_ENABLED`, `GEMINI_API_KEY`,
+`AI_SEARCH_PREFIX_ENABLED`, and `REQUIRE_DOT_SUFFIX_FOR_AI_SEARCH` under
+**AI search** in the Configuration tab. Debug settings are grouped under **Debug dashboard**. Enabling AI adds separate
 **Telegram AI Movies** and **Telegram AI Series** catalogs. Gemini uses Google
 Search to find up to five titles per category, then the addon returns only titles
 matched in the local Telegram index. Prefix mode requires a separate leading
 `AI` word (case insensitive), including in the debug search form. Only the search
 description is sent to Gemini; no indexed content or video data is sent.
+`REQUIRE_DOT_SUFFIX_FOR_AI_SEARCH` defaults to `true`: finish your description
+with a dot (`.`) to start AI search, for example `AI someone relives the same day.`
+with prefix mode enabled. Until the final dot is present, no Gemini request is
+made, avoiding unfinished searches and quota usage while typing in clients such
+as Nuvio. The final dot is removed before sending the description. This applies
+to both AI catalogs and debug AI search. Set the option to `false` to allow AI
+searches without a final dot.
 No background AI indexing or embeddings are generated. The debug search displays
 separate movie and series matches. **Cleanup** removes legacy embeddings and
 generated descriptions without removing Telegram entries, and reclaims database

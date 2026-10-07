@@ -17,9 +17,13 @@ class GeminiCooldown(httpx.HTTPError):
     """A prior 429 has paused all calls for this installation."""
 
 
-def ai_query(text, prefix_required):
-    """Return the clean query, or None when the optional prefix is missing."""
+def ai_query(text, prefix_required, dot_suffix_required=True):
+    """Return the clean query, or None when a required search marker is missing."""
     text = text.strip()
+    if dot_suffix_required:
+        if not text.endswith('.'):
+            return None
+        text = text[:-1].rstrip()
     words = text.lower().split(maxsplit=1)
     prefixed = bool(words and words[0] == 'ai')
     if prefix_required and not prefixed:

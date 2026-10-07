@@ -40,6 +40,14 @@ configuration:
         description: >-
           Only send search queries to Gemini when they begin with a separate AI word,
           case insensitive. Applies to both the catalogs and debug AI search.
+      REQUIRE_DOT_SUFFIX_FOR_AI_SEARCH:
+        name: Require dot suffix for AI search
+        description: >-
+          Wait until your AI search description ends with a dot (.) before calling
+          Gemini, preventing unfinished searches from using your API quota while
+          typing. Enabled by default. The final dot is removed before sending the
+          description. Applies to both the catalogs and debug AI search. Disable
+          to allow AI searches without a final dot.
   debug:
     name: Debug dashboard
     description: Configure the dashboard for inspecting indexing and search activity.
