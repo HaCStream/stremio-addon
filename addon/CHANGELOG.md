@@ -1,5 +1,15 @@
 # Changelog
 
+<!-- release:1.5.1:start -->
+## 1.5.1
+
+## What's Changed
+* Require an AI suffix to submit AI searches by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/18
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.5.0...v1.5.1
+<!-- release:1.5.1:end -->
+
 <!-- release:1.5.0:start -->
 ## 1.5.0
 
