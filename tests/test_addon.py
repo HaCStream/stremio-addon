@@ -185,20 +185,20 @@ def test_nested_home_assistant_debug_and_ai_options(tmp_path, monkeypatch):
         'API_ID': 123, 'API_HASH': 'hash', 'USER_SESSION_STRING': 'session',
         'debug': {'DEBUG_ENABLED': False, 'SKIP_DEBUG_AUTH': True},
         'ai': {'AI_SEARCH_ENABLED': True, 'GEMINI_API_KEY': 'secret',
-               'AI_SEARCH_PREFIX_ENABLED': True},
+               'REQUIRE_AI_SUFFIX_FOR_AI_SEARCH': False},
     }))
     real_path = core.Path
     monkeypatch.setattr(core, 'Path', lambda value: options if value == '/data/options.json' else real_path(value))
     for name in ('ADDON_URL', 'API_KEY', 'API_ID', 'API_HASH', 'USER_SESSION_STRING',
                  'DEBUG_ENABLED', 'DEBUG_PORT', 'SKIP_DEBUG_AUTH', 'AI_SEARCH_ENABLED', 'GEMINI_API_KEY',
-                 'AI_SEARCH_PREFIX_ENABLED'):
+                 'REQUIRE_AI_SUFFIX_FOR_AI_SEARCH'):
         monkeypatch.delenv(name, raising=False)
     settings = core.Settings.env()
     assert not settings.debug_enabled
     assert settings.skip_debug_auth
     assert settings.debug_port == 8001
     assert settings.ai_search_enabled
-    assert settings.ai_search_prefix_enabled
+    assert not settings.require_ai_suffix_for_ai_search
     assert settings.gemini_api_key == 'secret'
 
 

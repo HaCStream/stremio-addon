@@ -35,11 +35,15 @@ configuration:
       GEMINI_API_KEY:
         name: Gemini API key
         description: Gemini key used for online discovery of titles matching your search description.
-      AI_SEARCH_PREFIX_ENABLED:
-        name: Require AI search prefix
+      REQUIRE_AI_SUFFIX_FOR_AI_SEARCH:
+        name: Require AI suffix for AI search
         description: >-
-          Only send search queries to Gemini when they begin with a separate AI word,
-          case insensitive. Applies to both the catalogs and debug AI search.
+          Only call Gemini when your search description ends with a separate AI
+          word (case insensitive: AI, Ai, ai, or aI). Append it when you finish
+          typing to prevent unfinished searches from using your API quota.
+          Enabled by default. The AI suffix is removed before sending the
+          description. Applies to both the catalogs and debug AI search. Disable
+          to allow AI searches without the suffix.
   debug:
     name: Debug dashboard
     description: Configure the dashboard for inspecting indexing and search activity.

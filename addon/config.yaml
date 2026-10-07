@@ -29,7 +29,7 @@ options:
   ai:
     AI_SEARCH_ENABLED: false
     GEMINI_API_KEY: ""
-    AI_SEARCH_PREFIX_ENABLED: false
+    REQUIRE_AI_SUFFIX_FOR_AI_SEARCH: true
   debug:
     DEBUG_ENABLED: false
     DEBUG_HOST: "0.0.0.0"
@@ -45,7 +45,7 @@ schema:
   ai:
     AI_SEARCH_ENABLED: bool
     GEMINI_API_KEY: password?
-    AI_SEARCH_PREFIX_ENABLED: bool
+    REQUIRE_AI_SUFFIX_FOR_AI_SEARCH: bool
   debug:
     DEBUG_ENABLED: bool
     DEBUG_HOST: str

@@ -74,7 +74,7 @@ Set these values in `.env` for Docker Compose. In Home Assistant, enter the corr
 | `CHANNEL_IDS` | Comma-separated negative IDs limiting which joined private broadcast channels are indexed. Blank selects all eligible channels. | `false` | Empty | `-1001234567890,-1009876543210` |
 | `AI_SEARCH_ENABLED` | Adds separate **Telegram AI Movies** and **Telegram AI Series** catalogs using online search. | `false` | `false` | `true` |
 | `GEMINI_API_KEY` | Gemini API credential; required only when AI search is enabled. | Conditional | Empty | `YOUR_GEMINI_API_KEY` |
-| `AI_SEARCH_PREFIX_ENABLED` | Require a leading `AI` word (case insensitive) for searches in the AI catalog. | `false` | `false` | `true` |
+| `REQUIRE_AI_SUFFIX_FOR_AI_SEARCH` | Require a separate final `AI` word (case insensitive) before calling Gemini, preventing unfinished searches from using API quota while typing. Applies to AI catalogs and debug AI search; the suffix is removed before sending. Set `false` to allow searches without it. | `false` | `true` | `true` |
 | `DATA_DIR` | Persistent index and cache directory. Home Assistant manages this automatically; it is not a UI option. | `false` | `/data` standalone; `/data/stremio` in Home Assistant | `/data` |
 
 Use the variable names shown above. Set all environment variables in uppercase. Existing lowercase Home Assistant options remain readable during upgrades.
@@ -89,7 +89,7 @@ Selecting a channel does not join it. Public channels and groups are excluded. R
 
 Set `AI_SEARCH_ENABLED=true` and provide `GEMINI_API_KEY` to add separate **Telegram AI Movies** and **Telegram AI Series** catalogs. The existing **Telegram Videos** catalog keeps its ordinary text search. Reinstall or refresh the addon in your client after upgrading to discover the new catalogs.
 
-With `AI_SEARCH_PREFIX_ENABLED=true`, enter a search such as `AI someone relives the same day`. A separate leading `AI` word is required, case insensitive (`AI`, `Ai`, `ai`, and `aI` all work). Searches without that prefix return no AI results and make no Gemini request. The debug AI search form follows the same rule. When prefix mode is disabled, descriptions work without a prefix; a supplied prefix is still stripped.
+By default, `REQUIRE_AI_SUFFIX_FOR_AI_SEARCH=true`: finish your description with a separate `AI` word when you are ready to search, for example `someone relives the same day AI`. The suffix is case insensitive (`AI`, `Ai`, `ai`, and `aI` all work). Queries without it return no AI results and make no Gemini request, preventing clients such as Nuvio from using API quota on unfinished text during pauses in typing. Trailing whitespace is ignored, and the suffix is removed before sending the description to Gemini; the description retains its original case. This applies to both AI catalogs and the debug AI search form. Set `REQUIRE_AI_SUFFIX_FOR_AI_SEARCH=false` to allow AI searches without the suffix; a supplied suffix is still stripped.
 
 Gemini uses Google Search to find up to five movie titles and five series titles matching the description. The addon searches those titles in the ordinary Telegram index and returns only normalized title matches in currently selected channels. The movie and series catalogs share one short-lived cached discovery response. Availability is checked locally on every search; category assignments come from Gemini and do not independently classify Telegram files. Results depend on online discovery and title naming, so aliases or translated filenames may not match.
 
