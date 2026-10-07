@@ -8,11 +8,11 @@ FIELDS = (
     "ADDON_URL", "API_KEY", "API_ID", "API_HASH",
     "USER_SESSION_STRING", "CACHE_MB", "CHANNEL_IDS",
     "DEBUG_HOST", "DEBUG_ENABLED", "SKIP_DEBUG_AUTH", "AI_SEARCH_ENABLED", "GEMINI_API_KEY",
-    "AI_SEARCH_PREFIX_ENABLED", "REQUIRE_DOT_SUFFIX_FOR_AI_SEARCH",
+    "REQUIRE_AI_SUFFIX_FOR_AI_SEARCH",
 )
 GROUPS = {name: "debug" for name in ("DEBUG_HOST", "DEBUG_ENABLED", "SKIP_DEBUG_AUTH")}
-GROUPS.update({name: "ai" for name in ("AI_SEARCH_ENABLED", "GEMINI_API_KEY", "AI_SEARCH_PREFIX_ENABLED",
-                                      "REQUIRE_DOT_SUFFIX_FOR_AI_SEARCH")})
+GROUPS.update({name: "ai" for name in ("AI_SEARCH_ENABLED", "GEMINI_API_KEY",
+                                      "REQUIRE_AI_SUFFIX_FOR_AI_SEARCH")})
 
 
 def configure(options, environ):

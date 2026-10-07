@@ -32,9 +32,9 @@ def test_nested_options_reach_application_environment():
     env = {}
     configure({"debug": {"DEBUG_ENABLED": False, "SKIP_DEBUG_AUTH": True},
                "ai": {"AI_SEARCH_ENABLED": True, "GEMINI_API_KEY": "secret",
-                      "REQUIRE_DOT_SUFFIX_FOR_AI_SEARCH": False}}, env)
+                      "REQUIRE_AI_SUFFIX_FOR_AI_SEARCH": False}}, env)
     assert env["DEBUG_ENABLED"] == "False"
     assert env["SKIP_DEBUG_AUTH"] == "True"
     assert env["AI_SEARCH_ENABLED"] == "True"
     assert env["GEMINI_API_KEY"] == "secret"
-    assert env["REQUIRE_DOT_SUFFIX_FOR_AI_SEARCH"] == "False"
+    assert env["REQUIRE_AI_SUFFIX_FOR_AI_SEARCH"] == "False"
