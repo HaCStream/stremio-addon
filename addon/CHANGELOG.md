@@ -1,5 +1,15 @@
 # Changelog
 
+<!-- release:1.5.7:start -->
+## 1.5.7
+
+## What's Changed
+* Prefer Telegram message titles over filenames by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/28
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.5.6...v1.5.7
+<!-- release:1.5.7:end -->
+
 <!-- release:1.5.6:start -->
 ## 1.5.6
 
