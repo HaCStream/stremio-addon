@@ -6,7 +6,7 @@
 
 **Your Telegram videos, available in Stremio / Nuvio.**
 
-A self-hosted addon that connects to your Telegram user account, discovers joined private broadcast channels, and indexes uploaded videos for browsing, searching, and streaming through your server.
+A self-hosted addon that connects to your Telegram user account, discovers joined public and private broadcast channels, and indexes uploaded videos for browsing, searching, and streaming through your server.
 
 Since Stremio and Nuvio use the same underlying addon architecture and manifest format, this addon can work for both apps!
 
@@ -71,7 +71,7 @@ Set these values in `.env` for Docker Compose. In Home Assistant, enter the corr
 | `DEBUG_HOST` | Dashboard bind address. Keep the default for Docker port forwarding. | `false` | `0.0.0.0` | `0.0.0.0` |
 | `SKIP_DEBUG_AUTH` | Open the debug dashboard without an API key; anyone with dashboard access can search and request a sync. | `false` | `false` | `true` |
 | `CACHE_MB` | Disk chunk-cache limit in MiB; `0` disables new cache writes. | `false` | `512` | `1024` |
-| `CHANNEL_IDS` | Comma-separated negative IDs limiting which joined private broadcast channels are indexed. Blank selects all eligible channels. | `false` | Empty | `-1001234567890,-1009876543210` |
+| `CHANNEL_IDS` | Comma-separated negative IDs limiting which joined public and private broadcast channels are indexed. Blank selects all eligible channels. | `false` | Empty | `-1001234567890,-1009876543210` |
 | `AI_SEARCH_ENABLED` | Adds separate **Telegram AI Movies** and **Telegram AI Series** catalogs using online search. | `false` | `false` | `true` |
 | `GEMINI_API_KEY` | Gemini API credential; required only when AI search is enabled. | Conditional | Empty | `YOUR_GEMINI_API_KEY` |
 | `REQUIRE_AI_SUFFIX_FOR_AI_SEARCH` | Require a separate final `AI` word (case insensitive) before calling Gemini, preventing unfinished searches from using API quota while typing. Applies to AI catalogs and debug AI search; the suffix is removed before sending. Set `false` to allow searches without it. | `false` | `true` | `true` |
@@ -81,9 +81,9 @@ Use the variable names shown above. Set all environment variables in uppercase. 
 
 ### 🎯 Selecting channels
 
-Leave `CHANNEL_IDS` empty to discover all joined private broadcast channels, including archived dialogs. To limit indexing, copy the full negative channel IDs from the protected status endpoint into `CHANNEL_IDS`, then restart.
+Leave `CHANNEL_IDS` empty to discover all joined public and private broadcast channels, including archived dialogs. To limit indexing, copy the full negative channel IDs from the protected status endpoint into `CHANNEL_IDS`, then restart.
 
-Selecting a channel does not join it. Public channels and groups are excluded. Removing a channel from the selection removes its indexed entries when discovery runs; selecting it again starts a fresh history scan.
+Selecting a channel does not join it. Groups and supergroups are excluded. Removing a channel from the selection removes its indexed entries when discovery runs; selecting it again starts a fresh history scan.
 
 ### ✨ AI search
 

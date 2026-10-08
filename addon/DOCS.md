@@ -57,10 +57,10 @@ Set these options in the add-on's Configuration tab:
 | `API_HASH` | Telegram application hash |
 | `USER_SESSION_STRING` | Complete Telethon StringSession |
 | `CACHE_MB` | Optional cache limit in MiB, default `512` |
-| `CHANNEL_IDS` | Optional comma-separated negative channel IDs; blank scans all joined private channels |
+| `CHANNEL_IDS` | Optional comma-separated negative channel IDs; blank scans all joined public and private channels |
 
 For example, set `CHANNEL_IDS: "-1001234567890,-1009876543210"` and restart
-the add-on. Only those joined private broadcast channels will be indexed.
+the add-on. Only those joined public and private broadcast channels will be indexed.
 Existing catalog entries from excluded channels are removed on discovery;
 selecting them again restarts their history scan. Telegram posts are unchanged.
 
