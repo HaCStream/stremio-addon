@@ -1,6 +1,7 @@
 """Timestamped stdout logging shared by both HTTP listeners."""
 import copy
 import logging
+import re
 import sys
 
 
@@ -15,7 +16,8 @@ class LogFormatter(logging.Formatter):
         if record.name == 'uvicorn.error':
             record = copy.copy(record)
             record.name = 'uvicorn.server'
-        return super().format(record)
+        # HTTPX INFO logs and exception URLs can include TMDB's v3 query key.
+        return re.sub(r'(?i)(api_key=)[^&\s\"\']+', r'\1[redacted]', super().format(record))
 
 
 def configure_logging():

@@ -26,6 +26,8 @@ options:
   USER_SESSION_STRING: ""
   CACHE_MB: 512
   CHANNEL_IDS: ""
+  tmdb:
+    TMDB_API_KEY: ""
   ai:
     AI_SEARCH_ENABLED: false
     GEMINI_API_KEY: ""
@@ -42,6 +44,8 @@ schema:
   USER_SESSION_STRING: password
   CACHE_MB: int(0,)
   CHANNEL_IDS: str?
+  tmdb:
+    TMDB_API_KEY: password?
   ai:
     AI_SEARCH_ENABLED: bool
     GEMINI_API_KEY: password?

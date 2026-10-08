@@ -23,7 +23,7 @@ def test_nested_options_and_translations_cover_schema():
     config = yaml.safe_load(Path("addon/config.yaml").read_text(encoding="utf-8"))
     translation = yaml.safe_load(Path("addon/translations/en.yaml").read_text(encoding="utf-8"))
     assert set(translation["configuration"]) == set(config["schema"])
-    for group in ("debug", "ai"):
+    for group in ("debug", "ai", "tmdb"):
         assert set(translation["configuration"][group]["fields"]) == set(config["schema"][group])
     assert set(translation["network"]) == set(config["ports"])
 

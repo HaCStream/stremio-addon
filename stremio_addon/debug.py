@@ -4,6 +4,8 @@ import time
 import unicodedata
 from contextlib import asynccontextmanager
 from pathlib import Path
+import httpx
+from pydantic import BaseModel, Field
 
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
@@ -53,7 +55,8 @@ def create_debug_app(runtime):
     def safe_text(value):
         text = str(value)
         for secret in (app.state.runtime.cfg.key, app.state.runtime.cfg.session,
-                       app.state.runtime.cfg.api_hash, app.state.runtime.cfg.gemini_api_key):
+                       app.state.runtime.cfg.api_hash, app.state.runtime.cfg.gemini_api_key,
+                       app.state.runtime.cfg.tmdb_api_key):
             if secret:
                 text = text.replace(secret, '[redacted]')
         text = re.sub(r'https?://\S+', '[url]', text)
@@ -69,7 +72,8 @@ def create_debug_app(runtime):
             return [redact_diagnostics(v) for v in value]
         if isinstance(value, str):
             for secret in (app.state.runtime.cfg.key, app.state.runtime.cfg.session,
-                           app.state.runtime.cfg.api_hash, app.state.runtime.cfg.gemini_api_key):
+                           app.state.runtime.cfg.api_hash, app.state.runtime.cfg.gemini_api_key,
+                           app.state.runtime.cfg.tmdb_api_key):
                 if secret:
                     value = value.replace(secret, '[redacted]')
         return value
@@ -126,12 +130,63 @@ def create_debug_app(runtime):
             'cache_mb': shared.cfg.cache_bytes // 1024**2,
             'ai_search_enabled': shared.cfg.ai_search_enabled,
             'require_ai_suffix_for_ai_search': shared.cfg.require_ai_suffix_for_ai_search,
+            'tmdb_enabled': bool(shared.cfg.tmdb_api_key),
         }
 
     @app.get('/api/channels')
     async def channel_list(x_debug_key: str | None = Header(None)):
         authorize(x_debug_key)
         return {'channels': channels()}
+
+    def tmdb_service():
+        service = app.state.runtime.tmdb
+        if not service.key:
+            raise HTTPException(409, 'Set TMDB_API_KEY to enable TMDB matching')
+        return service
+
+    @app.get('/api/tmdb/shows')
+    async def tmdb_shows(x_debug_key: str | None = Header(None)):
+        authorize(x_debug_key)
+        return {'enabled': bool(app.state.runtime.cfg.tmdb_api_key),
+                'shows': app.state.runtime.tmdb.shows()}
+
+    @app.get('/api/tmdb/candidates')
+    async def tmdb_candidates(series_id: str, q: str = Query('', max_length=200),
+                              x_debug_key: str | None = Header(None)):
+        authorize(x_debug_key)
+        try:
+            return {'candidates': await tmdb_service().candidates(series_id, q)}
+        except ValueError:
+            raise HTTPException(400, 'Invalid Telegram show or TMDB response') from None
+        except (httpx.HTTPError, RuntimeError, KeyError, TypeError):
+            raise HTTPException(502, 'TMDB lookup failed; check the API key or retry later') from None
+
+    class TMDBMapping(BaseModel):
+        series_id: str
+        tmdb: int = Field(gt=0)
+        season_offset: int = Field(default=0, ge=-1000, le=1000)
+        episode_offset: int = Field(default=0, ge=-10000, le=10000)
+
+    @app.put('/api/tmdb/mapping')
+    async def tmdb_mapping(body: TMDBMapping, x_debug_key: str | None = Header(None)):
+        authorize(x_debug_key)
+        try:
+            candidate = await tmdb_service().select(body.series_id, body.tmdb,
+                                                    body.season_offset, body.episode_offset)
+            return {'mapping': candidate}
+        except ValueError:
+            raise HTTPException(400, 'Invalid Telegram show or TMDB response') from None
+        except (httpx.HTTPError, RuntimeError, KeyError, TypeError):
+            raise HTTPException(502, 'TMDB lookup failed; check the API key or retry later') from None
+
+    @app.delete('/api/tmdb/mapping')
+    async def tmdb_block(series_id: str, x_debug_key: str | None = Header(None)):
+        authorize(x_debug_key)
+        try:
+            await app.state.runtime.tmdb.block(series_id)
+        except ValueError:
+            raise HTTPException(400, 'Unknown Telegram show') from None
+        return {'ok': True}
 
     @app.get('/api/activity')
     async def activity(x_debug_key: str | None = Header(None)):

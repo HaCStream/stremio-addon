@@ -23,7 +23,7 @@ interaction_log.setLevel(logging.INFO)
 
 def safe_log_text(value, cfg):
     text = str(value)
-    for secret in (cfg.key, cfg.session, cfg.api_hash, cfg.gemini_api_key):
+    for secret in (cfg.key, cfg.session, cfg.api_hash, cfg.gemini_api_key, cfg.tmdb_api_key):
         if secret:
             text = text.replace(secret, '[redacted]')
     text = re.sub(r'https?://\S+|/(?:play|thumb)/\S+', '[url]', text)
@@ -147,7 +147,7 @@ def create_app_with_runtime(runtime):
                 'resources': [{'name': 'catalog', 'types': ['movie', 'series']},
                               {'name': 'meta', 'types': ['movie'], 'idPrefixes': ['tg:']},
                               {'name': 'meta', 'types': ['series'], 'idPrefixes': ['tg:', 'tt']},
-                              {'name': 'stream', 'types': ['movie', 'series'], 'idPrefixes': ['tg:', 'tt']}],
+                              {'name': 'stream', 'types': ['movie', 'series'], 'idPrefixes': ['tg:', 'tt', 'tmdb:']}],
                 'catalogs': catalogs}
 
     @app.get('/{key}/catalog/{kind}/{catalog_id}.json')
@@ -213,6 +213,9 @@ def create_app_with_runtime(runtime):
         interaction(request, 'stream_lookup', type=kind, item=item,
                     match_mode='telegram_id' if item.startswith('tg:') else 'metadata', result_count=0)
         if kind not in ('movie', 'series'):
+            return {'streams': []}
+        if kind == 'series' and not item.startswith('tg:') and not re.fullmatch(
+                r'(?:tt\d{7,10}|tmdb:(?:tv:)?[1-9]\d*):\d+:\d+', item):
             return {'streams': []}
         episode = re.fullmatch(r'(tg:series:[0-9a-f]{24}):(\d+):(\d+)', item)
         if kind == 'series' and episode:

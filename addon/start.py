@@ -9,11 +9,13 @@ FIELDS = (
     "ADDON_URL", "API_KEY", "API_ID", "API_HASH",
     "USER_SESSION_STRING", "CACHE_MB", "CHANNEL_IDS",
     "DEBUG_HOST", "DEBUG_ENABLED", "SKIP_DEBUG_AUTH", "AI_SEARCH_ENABLED", "GEMINI_API_KEY",
-    "REQUIRE_AI_SUFFIX_FOR_AI_SEARCH",
+    "REQUIRE_AI_SUFFIX_FOR_AI_SEARCH", "TMDB_API_KEY",
 )
 GROUPS = {name: "debug" for name in ("DEBUG_HOST", "DEBUG_ENABLED", "SKIP_DEBUG_AUTH")}
 GROUPS.update({name: "ai" for name in ("AI_SEARCH_ENABLED", "GEMINI_API_KEY",
                                       "REQUIRE_AI_SUFFIX_FOR_AI_SEARCH")})
+
+GROUPS["TMDB_API_KEY"] = "tmdb"
 
 
 def configure(options, environ):
