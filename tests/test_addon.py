@@ -286,6 +286,7 @@ class FakeTelegram:
         self.client = SimpleNamespace(is_connected=lambda: True)
         self.status = {'phase': 'ready'}
         self.sync_requests = 0
+        self.sync_status = {"id": None, "state": "idle", "error": None}
     async def start(self):
         self.store.upsert(row())
     async def close(self):
@@ -296,6 +297,8 @@ class FakeTelegram:
         yield b'0123456789'[start:end + 1]
     def request_sync(self):
         self.sync_requests += 1
+        self.sync_status = {"id": "test-sync", "state": "queued", "error": None}
+        return dict(self.sync_status)
 
 
 def test_debug_dashboard_is_read_only_and_shows_queried_channels(tmp_path):
@@ -322,7 +325,14 @@ def test_debug_dashboard_is_read_only_and_shows_queried_channels(tmp_path):
         assert 'url' not in result['results'][0]
         assert client.get('/play/anything', headers=headers).status_code == 404
         assert client.get('/thumb/anything', headers=headers).status_code == 404
-        assert client.post('/api/sync', headers=headers).status_code == 202
+        assert client.get('/api/sync').status_code == 401
+        assert client.post('/api/sync').status_code == 401
+        response = client.post('/api/sync', headers=headers)
+        assert response.status_code == 202
+        assert response.json()['sync']['state'] == 'queued'
+        assert client.get('/api/sync', headers=headers).json()['sync']['id'] == 'test-sync'
+        app.state.runtime.tg.sync_status.update(state='done')
+        assert client.get('/api/sync', headers=headers).json()['sync']['state'] == 'done'
         assert app.state.runtime.tg.sync_requests == 1
         events = client.get('/api/activity', headers=headers).json()['events']
         assert events[0]['event'] == 'sync_requested'
@@ -548,3 +558,123 @@ async def test_history_restart_checkpoint(tmp_path):
     assert set(indexed) == set(range(1, 207))
     assert gateway.store.checkpoint(123) == dict(channel=123, oldest=1, newest=206, complete=1)
     gateway.store.db.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('failure', [None, 'error', 'revoked', 'flood'])
+async def test_manual_sync_lifecycle(tmp_path, caplog, failure):
+    import asyncio
+    import logging
+    from telethon import errors
+
+    caplog.set_level(logging.INFO, logger='uvicorn.error.telegram')
+    store = Store(tmp_path / 'db')
+    gateway = Telegram(Settings(8000, 'http://localhost', 'a'*32, 1, 'hash', '', tmp_path), store)
+    passes = []
+    discoveries = []
+    waiting = asyncio.Event()
+    release = asyncio.Event()
+
+    async def discover():
+        discoveries.append(True)
+        gateway.channels = {-100123: 'channel'}
+
+    async def scan(channel, entity):
+        passes.append(True)
+        if len(passes) == 1:
+            waiting.set()
+            await release.wait()
+            if failure == 'error':
+                raise RuntimeError('private exception payload')
+            if failure == 'revoked':
+                raise errors.SessionRevokedError(request=None)
+            if failure == 'flood':
+                raise errors.FloodWaitError(request=None, capture=0)
+        checkpoint = store.checkpoint(channel)
+        checkpoint['complete'] = int(len(passes) >= 2)
+        store.save_checkpoint(checkpoint)
+
+    async def reconcile():
+        pass
+
+    gateway.discover, gateway.scan, gateway.reconcile = discover, scan, reconcile
+    requested = gateway.request_sync()
+    assert requested['state'] == 'queued'
+    assert gateway.request_sync()['id'] == requested['id']
+    task = asyncio.create_task(gateway.run())
+    try:
+        await asyncio.wait_for(waiting.wait(), 1)
+        assert gateway.sync_status['state'] == 'running'
+        assert gateway.request_sync()['id'] == requested['id']
+        release.set()
+
+        async def finished():
+            while gateway.sync_status['state'] in ('queued', 'running'):
+                await asyncio.sleep(.01)
+        await asyncio.wait_for(finished(), 8)
+        if failure in ('error', 'revoked'):
+            assert gateway.sync_status['state'] == 'failed'
+            assert 'Sync failed' in caplog.text
+            assert 'private exception payload' not in caplog.text
+            if failure == 'revoked':
+                with pytest.raises(RuntimeError, match='session revoked'):
+                    gateway.request_sync()
+        else:
+            assert gateway.sync_status['state'] == 'done'
+            assert len(passes) == 2
+            assert len(discoveries) == (2 if failure == 'flood' else 1)
+            assert 'Sync done' in caplog.text
+            if failure == 'flood':
+                assert 'rate limited' in caplog.text
+            else:
+                assert 'Sync indexing history' in caplog.text
+        assert 'Sync requested' in caplog.text
+        assert 'Sync started' in caplog.text
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        store.db.close()
+
+
+@pytest.mark.asyncio
+async def test_sync_requested_during_background_scan_waits_for_discovery(tmp_path):
+    import asyncio
+    store = Store(tmp_path / 'db')
+    gateway = Telegram(Settings(8000, 'http://localhost', 'a'*32, 1, 'hash', '', tmp_path), store)
+    scanning, release, rediscovering = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    discoveries = []
+
+    async def discover():
+        discoveries.append(True)
+        gateway.channels = {-100123: 'channel'}
+        if len(discoveries) == 2:
+            rediscovering.set()
+            await asyncio.Event().wait()
+
+    async def scan(channel, entity):
+        scanning.set()
+        await release.wait()
+        checkpoint = store.checkpoint(channel)
+        checkpoint['complete'] = 1
+        store.save_checkpoint(checkpoint)
+
+    async def reconcile():
+        pass
+
+    gateway.discover, gateway.scan, gateway.reconcile = discover, scan, reconcile
+    task = asyncio.create_task(gateway.run())
+    try:
+        await asyncio.wait_for(scanning.wait(), 1)
+        gateway.request_sync()
+        release.set()
+        await asyncio.wait_for(rediscovering.wait(), 1)
+        assert gateway.sync_status['state'] == 'running'
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert gateway.sync_status['state'] == 'failed'
+        store.db.close()

@@ -1,11 +1,15 @@
 import asyncio
 import hashlib
+import logging
 import os
 import time
 from pathlib import Path
+from uuid import uuid4
 from telethon import TelegramClient, events, errors, types, utils
 from telethon.sessions import StringSession
 from .core import parse_title
+
+logger = logging.getLogger("uvicorn.error.telegram")
 
 CHUNK = 512 * 1024
 
@@ -22,6 +26,8 @@ class Telegram:
         self.cache_limit = max(0, settings.cache_bytes)
         self.download_slots = asyncio.Semaphore(4)
         self.sync_requested = asyncio.Event()
+        self.sync_status = {"id": None, "state": "idle", "error": None}
+        self.sync_started = None
         self.task = None
         self.reconcile_cursor = ''
 
@@ -46,11 +52,32 @@ class Telegram:
                 await self.task
             except asyncio.CancelledError:
                 pass
+        self.finish_sync("Sync interrupted by shutdown")
         await self.client.disconnect()
 
     def request_sync(self):
         """Wake the indexer and force channel discovery plus catch-up scans."""
+        if self.sync_status['state'] in ('queued', 'running'):
+            return dict(self.sync_status)
+        if self.status['phase'] == 'unauthorized':
+            raise RuntimeError('Telegram session revoked; restart with a valid session')
+        self.sync_status = {'id': uuid4().hex, 'state': 'queued', 'error': None}
+        self.sync_started = time.monotonic()
         self.sync_requested.set()
+        logger.info('Sync requested: id=%s', self.sync_status['id'])
+        return dict(self.sync_status)
+
+    def finish_sync(self, error=None):
+        if self.sync_status['state'] not in ('queued', 'running'):
+            return
+        duration = round(time.monotonic() - self.sync_started, 1)
+        self.sync_status.update(state='failed' if error else 'done', error=error)
+        if error:
+            logger.error('Sync failed: id=%s error=%s duration_seconds=%s',
+                         self.sync_status['id'], error, duration)
+        else:
+            logger.info('Sync done: id=%s channels=%s duration_seconds=%s',
+                        self.sync_status['id'], len(self.channels), duration)
 
     async def discover(self):
         channels = {}
@@ -139,13 +166,20 @@ class Telegram:
             try:
                 forced = self.sync_requested.is_set()
                 self.sync_requested.clear()
+                if forced:
+                    self.sync_status.update(state='running')
+                    logger.info('Sync started: id=%s; discovering channels', self.sync_status['id'])
                 if forced or time.time() >= next_discovery:
                     await self.discover()
                     next_discovery = time.time() + 300
+                    logger.info('Channel discovery complete: channels=%s', len(self.channels))
                 for channel, entity in list(self.channels.items()):
                     try:
+                        if self.sync_status['state'] == 'running':
+                            logger.info('Sync scanning channel: id=%s', channel)
                         await self.scan(channel, entity)
                     except (errors.ChannelPrivateError, errors.ChannelInvalidError):
+                        logger.warning('Sync skipped inaccessible channel: id=%s', channel)
                         self.channels.pop(channel, None)
                         for r in self.store.db.execute('SELECT id FROM videos WHERE channel=?', (channel,)).fetchall():
                             self.store.delete(r['id'])
@@ -153,17 +187,31 @@ class Telegram:
                 await self.reconcile()
                 incomplete = any(not self.store.checkpoint(c)['complete'] for c in self.channels)
                 self.status.update(phase='indexing' if incomplete else 'ready', last_error=None)
+                if not incomplete and self.sync_status['state'] == 'running':
+                    self.finish_sync()
+                elif self.sync_status['state'] == 'running':
+                    remaining = sum(not self.store.checkpoint(c)['complete'] for c in self.channels)
+                    logger.info('Sync indexing history: incomplete_channels=%s', remaining)
                 try:
                     await asyncio.wait_for(self.sync_requested.wait(), 2 if incomplete else 30)
                 except TimeoutError:
                     pass
             except errors.FloodWaitError as exc:
                 self.status.update(phase='rate_limited', last_error='Telegram flood wait', retry_after=exc.seconds)
+                logger.warning('Telegram sync rate limited: retry_after_seconds=%s', exc.seconds)
+                if self.sync_status['state'] in ('queued', 'running'):
+                    self.sync_requested.set()
                 await asyncio.sleep(exc.seconds)
             except (errors.AuthKeyUnregisteredError, errors.SessionRevokedError):
+                self.finish_sync('Telegram session revoked')
                 self.status.update(phase='unauthorized', last_error='Telegram session revoked')
                 return
+            except asyncio.CancelledError:
+                self.finish_sync("Sync interrupted by shutdown")
+                raise
             except Exception as exc:
+                self.finish_sync(type(exc).__name__)
+                logger.error("Telegram indexing failed: error=%s", type(exc).__name__)
                 # Do not log exception text: Telegram exceptions can contain private values.
                 self.status.update(phase='retrying', last_error=type(exc).__name__)
                 await asyncio.sleep(30)

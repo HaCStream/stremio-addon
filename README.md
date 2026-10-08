@@ -334,7 +334,7 @@ Then open `http://127.0.0.1:8001` locally.
 - **📋 Channels:** see which channels are included in queries.
 - **🔎 Search:** inspect matching results and diagnostic details without playback.
 - **👁️ Credentials:** reveal or hide the API key while entering it.
-- **🔄 Sync now:** trigger channel discovery and catch-up indexing after joining a channel or adding a video.
+- **🔄 Sync now:** trigger channel discovery and catch-up indexing after joining a channel or adding a video. The button stays disabled with **Syncing...** until discovery and indexing finish, then shows **Sync done!**. Failures appear in the dashboard, and sync progress is logged.
 - **📝 Activity:** review recent addon activity.
 
 For connection and indexing details, use the protected endpoint:
