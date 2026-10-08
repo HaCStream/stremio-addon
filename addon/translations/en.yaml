@@ -25,6 +25,16 @@ configuration:
     description: >-
       Optional comma-separated negative Telegram channel IDs. Leave blank to scan all
       joined public and private broadcast channels.
+  tmdb:
+    name: TMDB show matching
+    description: Match Telegram shows to public catalog episode identities.
+    fields:
+      TMDB_API_KEY:
+        name: TMDB API key
+        description: >-
+          Optional TMDB v3 API key. Enables background show matching and Telegram
+          sources under public catalog episodes. Review ambiguous matches in the
+          debug dashboard. Leave blank to disable new lookups.
   ai:
     name: AI search
     description: Configure optional Gemini-powered online title search.

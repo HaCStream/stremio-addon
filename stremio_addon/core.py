@@ -113,6 +113,7 @@ class Settings:
     gemini_api_key: str = ''
     skip_debug_auth: bool = False
     require_ai_suffix_for_ai_search: bool = True
+    tmdb_api_key: str = ''
 
     @classmethod
     def env(cls):
@@ -130,7 +131,7 @@ class Settings:
                 'Home Assistant options in /data/options.json must be a JSON object'
             )
 
-        for group_name in ('debug', 'ai'):
+        for group_name in ('debug', 'ai', 'tmdb'):
             group = options.get(group_name)
             if isinstance(group, dict):
                 options.update(group)
@@ -186,7 +187,8 @@ class Settings:
         return cls(port, url, key, int(get('API_ID')), get('API_HASH'), get('USER_SESSION_STRING'),
                    Path(get('DATA_DIR', default_data)), int(get('CACHE_MB', '512')) * 1024**2,
                    channel_ids, debug_port, debug_host, debug_enabled, ai_enabled, gemini_key,
-                   skip_debug_auth, ai_suffix)
+                   skip_debug_auth, ai_suffix,
+                   str(os.getenv('TMDB_API_KEY') or options.get('TMDB_API_KEY') or '').strip())
 
 
 class Tokens:
@@ -241,6 +243,12 @@ class Store:
         CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(id UNINDEXED, text, tokenize='unicode61');
         CREATE TABLE IF NOT EXISTS checkpoints(channel INTEGER PRIMARY KEY, oldest INTEGER, newest INTEGER, complete INTEGER DEFAULT 0);
         CREATE TABLE IF NOT EXISTS mappings(id TEXT PRIMARY KEY, imdb TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS tmdb_series(series_id TEXT PRIMARY KEY,
+          tmdb INTEGER, imdb TEXT, name TEXT, status TEXT NOT NULL,
+          candidates TEXT NOT NULL DEFAULT '[]', checked_at REAL NOT NULL,
+          season_offset INTEGER NOT NULL DEFAULT 0, episode_offset INTEGER NOT NULL DEFAULT 0);
+        CREATE INDEX IF NOT EXISTS tmdb_series_imdb ON tmdb_series(imdb);
+        CREATE INDEX IF NOT EXISTS tmdb_series_tmdb ON tmdb_series(tmdb);
         CREATE TABLE IF NOT EXISTS ai_rate_limit(id INTEGER PRIMARY KEY CHECK (id=1),
           retry_at REAL NOT NULL, strikes INTEGER NOT NULL);
         ''')

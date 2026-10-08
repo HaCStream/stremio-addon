@@ -103,7 +103,14 @@ rebuilds the local search index once to refresh older entries. This uses existin
 text only; it does not translate or transliterate names automatically.
 For shows opened from other catalogs using standard IMDb IDs (`tt...`), the addon
 matches public English/Hebrew title aliases or explicit mappings and serves matching
-episode streams. Other catalogs with unrelated ID formats are not matched.
+episode streams. With a TMDB v3 API key configured under **TMDB show matching**, the background
+matcher saves show-level TMDB/IMDb identities and also accepts `tmdb:ID:S:E`
+and `tmdb:tv:ID:S:E` requests. Review ambiguous results or correct mappings in
+the debug dashboard's **TMDB matching** tab. Optional season/episode offsets
+apply to all episodes of the selected show; arbitrary reorderings need separate
+episode mapping and are not automated. Saved mappings survive restarts, apply
+to new episodes, and require no TMDB call during playback. Blank keys disable
+new lookups while retaining saved sources. Other ID formats are not matched.
 Refresh or reinstall the addon in Nuvio/Stremio after upgrading so the client loads
 the new series catalog and metadata capabilities. The client may still choose another
 metadata provider for an external show; playback matching uses its requested season

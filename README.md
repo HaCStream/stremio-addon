@@ -75,9 +75,24 @@ Set these values in `.env` for Docker Compose. In Home Assistant, enter the corr
 | `AI_SEARCH_ENABLED` | Adds separate **Telegram AI Movies** and **Telegram AI Series** catalogs using online search. | `false` | `false` | `true` |
 | `GEMINI_API_KEY` | Gemini API credential; required only when AI search is enabled. | Conditional | Empty | `YOUR_GEMINI_API_KEY` |
 | `REQUIRE_AI_SUFFIX_FOR_AI_SEARCH` | Require a separate final `AI` word (case insensitive) before calling Gemini, preventing unfinished searches from using API quota while typing. Applies to AI catalogs and debug AI search; the suffix is removed before sending. Set `false` to allow searches without it. | `false` | `true` | `true` |
+| `TMDB_API_KEY` | Optional TMDB v3 API key. Enables saved show matching and Telegram sources for public catalog episodes. | `false` | Empty | `YOUR_TMDB_V3_API_KEY` |
 | `DATA_DIR` | Persistent index and cache directory. Home Assistant manages this automatically; it is not a UI option. | `false` | `/data` standalone; `/data/stremio` in Home Assistant | `/data` |
 
 Use the variable names shown above. Set all environment variables in uppercase. Existing lowercase Home Assistant options remain readable during upgrades.
+
+### 🔗 TMDB show matching
+
+Set `TMDB_API_KEY` to a TMDB **v3 API key** (not the API Read Access Token). In Home Assistant, this option is under **TMDB show matching**. Restart and refresh/reinstall the addon in Nuvio or Stremio so it advertises TMDB stream IDs.
+
+The background matcher checks existing and newly indexed shows every minute. It searches using the extracted message title and filename aliases, comparing Hebrew, English, original and alternative TMDB names. One exact title match is saved automatically; multiple exact matches can be distinguished by an available year. Other results require review in the debug dashboard's **TMDB matching** tab. Choose a candidate or enter a TMDB TV show ID, then save. Manual choices apply to every episode grouped under that Telegram show and are never replaced automatically.
+
+Saved mappings connect a show to its TMDB and, where available, IMDb ID. When another catalog requests `tt1234567:1:2`, `tmdb:42:1:2`, or `tmdb:tv:42:1:2`, the addon returns files for the corresponding season and episode from the currently enabled channels. Playback uses the saved mapping without contacting TMDB. Missing episodes return no source. Telegram's own catalog and IDs remain usable. This does not change which metadata provider the client uses or guarantee that it combines duplicate search cards.
+
+Mappings, review candidates and retry timestamps survive restarts. Unmatched/ambiguous shows are retried after one day; matched shows need no repeated lookup. API errors back off, and rate-limit responses pause matching. Clearing the key disables new lookups while preserving saved sources.
+
+The review tab supports season and episode offsets: **Telegram number = catalog number + offset**. An offset of `1` maps catalog season 1 to Telegram season 2. Offsets apply to the entire show; arbitrary episode reorderings and different season boundaries are not handled automatically. You can disable matching for an incorrectly identified show. Existing explicit per-file IMDb mappings take precedence over a show mapping.
+
+Only extracted title aliases (or your manually entered search title) are sent to TMDB; full captions, channel identities and media are not sent. This product uses the TMDB API but is not endorsed or certified by TMDB.
 
 ### 🎯 Selecting channels
 
