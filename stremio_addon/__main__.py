@@ -1,12 +1,11 @@
 import asyncio
-import logging
 import signal
-import sys
 import uvicorn
 from .core import Settings
 from .app import create_app_with_runtime
 from .debug import create_debug_app
 from .runtime import Runtime
+from .logging_setup import configure_logging
 
 
 async def serve(settings):
@@ -29,9 +28,5 @@ if __name__ == '__main__':
     settings = Settings.env()
     # Uvicorn's log_config=None leaves INFO messages without a stdout handler.
     # Supervisor captures stdout/stderr for the add-on Logs tab.
-    logging.basicConfig(level=logging.INFO, stream=sys.stdout,
-                        format='%(asctime)s %(levelname)s: %(name)s: %(message)s',
-                        datefmt='%Y-%m-%dT%H:%M:%S%z')
-    # No request paths or Telegram payloads in application logs.
-    logging.getLogger('telethon').setLevel(logging.CRITICAL)
+    configure_logging()
     asyncio.run(serve(settings))

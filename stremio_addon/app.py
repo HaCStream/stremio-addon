@@ -17,7 +17,7 @@ from .runtime import Runtime
 from .telegram import Telegram
 from .version import get_version
 
-interaction_log = logging.getLogger('uvicorn.error.interactions')
+interaction_log = logging.getLogger('stremio_addon.interactions')
 interaction_log.setLevel(logging.INFO)
 
 

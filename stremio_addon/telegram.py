@@ -9,7 +9,7 @@ from telethon import TelegramClient, events, errors, types, utils
 from telethon.sessions import StringSession
 from .core import parse_title
 
-logger = logging.getLogger("uvicorn.error.telegram")
+logger = logging.getLogger("stremio_addon.telegram")
 
 CHUNK = 512 * 1024
 
