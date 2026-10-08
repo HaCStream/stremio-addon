@@ -1,5 +1,16 @@
 # Changelog
 
+<!-- release:1.5.9:start -->
+## 1.5.9
+
+## What's Changed
+* Rename Debug UI to Developer UI by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/31
+* Show complete stream titles and size units in Nuvio by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/32
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.5.8...v1.5.9
+<!-- release:1.5.9:end -->
+
 <!-- release:1.5.8:start -->
 ## 1.5.8
 
