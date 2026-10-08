@@ -96,6 +96,11 @@ its indexed episodes in season/episode order; multiple files for the same episod
 appear as separate playback choices. These files are excluded from **Telegram Videos**.
 AI series results use the same grouping. Existing entries are updated automatically
 on the first startup after upgrading, without a Telegram rescan.
+Text search indexes the displayed title, original filename, and caption, so a
+Hebrew caption and a Latin filename can both find the same entry. Joined/spaced
+title variants such as `hashminia` and `Ha Shminia` are searchable too. Upgrading
+rebuilds the local search index once to refresh older entries. This uses existing
+text only; it does not translate or transliterate names automatically.
 For shows opened from other catalogs using standard IMDb IDs (`tt...`), the addon
 matches public English/Hebrew title aliases or explicit mappings and serves matching
 episode streams. Other catalogs with unrelated ID formats are not matched.

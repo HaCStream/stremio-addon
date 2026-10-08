@@ -19,6 +19,25 @@ def normalize(text):
     return ' '.join(re.sub(r'[^\w]+', ' ', text, flags=re.UNICODE).replace('_', ' ').split())
 
 
+def search_text(row):
+    text = normalize(' '.join(str(row.get(k) or '') for k in ('title', 'filename', 'caption')))
+    # Make the displayed title searchable even when release filenames split a
+    # word with dots/spaces (Ha.Shminia -> hashminia). Keep caption tokens too.
+    aliases = re.split(r'[/|\n]', row.get('title') or '')
+    joined = [normalize(alias).replace(' ', '') for alias in aliases]
+    return ' '.join([text, *joined])
+
+
+def search_expression(query):
+    terms = normalize(query).split()[:30]
+    if not terms:
+        return None
+    expression = ' AND '.join('"' + t + '"*' for t in terms)
+    if len(terms) > 1:
+        expression = '(' + expression + ') OR "' + ''.join(terms) + '"*'
+    return expression
+
+
 EPISODE_PATTERN = r'(?<![A-Za-z0-9])S(\d{1,2})[ ._-]*E(\d{1,3})(?!\d)|עונה[\s._-]*(\d+)[\s,.:/_-]*פרק[\s._-]*(\d+)'
 
 
@@ -201,8 +220,7 @@ class Store:
                     parsed = parse_title(row['filename'] or '', row['caption'] or '')
                     if parsed['season'] is not None:
                         row.update(parsed)
-                        row['search'] = normalize(' '.join(str(row.get(k) or '')
-                                                          for k in ('title', 'filename', 'caption')))
+                        row['search'] = search_text(row)
                         self.db.execute('UPDATE videos SET title=?,year=?,season=?,episode=?,imdb=?,quality=?,search=? WHERE id=?',
                                         [row[k] for k in ('title', 'year', 'season', 'episode', 'imdb', 'quality', 'search', 'id')])
                         self.db.execute('DELETE FROM search WHERE id=?', (row['id'],))
@@ -211,11 +229,21 @@ class Store:
                     self.db.execute('UPDATE videos SET series_id=? WHERE id=?', (identifier, row['id']))
         self.db.execute('CREATE INDEX IF NOT EXISTS videos_series ON videos(series_id,season,episode)')
         self.db.commit()
+        if self.db.execute('PRAGMA user_version').fetchone()[0] < 1:
+            # Refresh every persisted title/filename/caption, including old
+            # caption-only or missing FTS entries. No Telegram requests needed.
+            with self.db:
+                self.db.execute('DELETE FROM search')
+                for saved in self.db.execute('SELECT * FROM videos').fetchall():
+                    text = search_text(dict(saved))
+                    self.db.execute('UPDATE videos SET search=? WHERE id=?', (text, saved['id']))
+                    self.db.execute('INSERT INTO search VALUES (?,?)', (saved['id'], text))
+                self.db.execute('PRAGMA user_version=1')
 
     def upsert(self, row):
         row = dict(row, series_id=series_id(row['title'])
                    if row.get('season') is not None and row.get('episode') is not None else None)
-        row = dict(row, search=normalize(' '.join(str(row.get(k) or '') for k in ('title', 'filename', 'caption'))))
+        row = dict(row, search=search_text(row))
         with self.db:
             self.db.execute('INSERT OR REPLACE INTO videos (' + ','.join(row) + ') VALUES (' + ','.join('?' for _ in row) + ')', list(row.values()))
             self.db.execute('DELETE FROM search WHERE id=?', (row['id'],))
@@ -231,9 +259,8 @@ class Store:
         return dict(row) if row else None
 
     def catalog(self, query='', skip=0, limit=100):
-        terms = normalize(query).split()[:30]
-        if terms:
-            expression = ' AND '.join('"' + t + '"*' for t in terms)
+        expression = search_expression(query)
+        if expression:
             rows = self.db.execute('SELECT v.* FROM videos v JOIN search s ON s.id=v.id WHERE s.text MATCH ? ORDER BY v.date DESC,v.id LIMIT ? OFFSET ?', (expression, limit, skip))
         else:
             rows = self.db.execute('SELECT * FROM videos ORDER BY date DESC,id LIMIT ? OFFSET ?', (limit, skip))
@@ -242,14 +269,14 @@ class Store:
     def grouped_catalog(self, kind, allowed, query='', skip=0, limit=100):
         if not allowed:
             return []
-        terms = normalize(query).split()[:30]
-        join = ' JOIN search s ON s.id=v.id' if terms else ''
+        expression = search_expression(query)
+        join = ' JOIN search s ON s.id=v.id' if expression else ''
         where = 'v.channel IN (' + ','.join('?' for _ in allowed) + ')'
         params = list(sorted(allowed))
         where += ' AND v.series_id IS ' + ('NOT NULL' if kind == 'series' else 'NULL')
-        if terms:
+        if expression:
             where += ' AND s.text MATCH ?'
-            params.append(' AND '.join('"' + t + '"*' for t in terms))
+            params.append(expression)
         # Group before pagination; hundreds of episodes still count as one show.
         rows = self.db.execute(
             'SELECT * FROM (SELECT v.*, ROW_NUMBER() OVER ('
@@ -270,10 +297,9 @@ class Store:
             'SELECT * FROM videos WHERE ' + where + ' ORDER BY season,episode,date DESC,id', params)]
 
     def title_matches(self, title, allowed):
-        terms = normalize(title).split()[:30]
-        if not terms or not allowed:
+        expression = search_expression(title)
+        if not expression or not allowed:
             return []
-        expression = ' AND '.join('"' + t + '"*' for t in terms)
         placeholders = ','.join('?' for _ in allowed)
         rows = self.db.execute(
             'SELECT v.* FROM videos v JOIN search s ON s.id=v.id '

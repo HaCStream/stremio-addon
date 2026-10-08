@@ -97,6 +97,50 @@ def test_group_before_pagination(tmp_path):
     store.db.close()
 
 
+@pytest.mark.parametrize('title', ['hashminia', 'Ha.Shminia', 'Ha Shminia'])
+def test_search_displayed_title_and_hebrew_caption(tmp_path, title):
+    cfg = Settings(8000, 'https://example.com', 'a' * 32, 1, 'hash', 'session', tmp_path)
+    runtime = Runtime(cfg, Gateway)
+    with TestClient(create_app_with_runtime(runtime)) as client:
+        runtime.store.upsert(video(1, title + '.S01E01.mkv', caption='השמיניה עונה 1 פרק 1'))
+        expected = series_id(parse_title(title + '.S01E01.mkv', '')['title'])
+        for query in ('השמיניה', 'hashminia', 'HASHMINIA', 'ha shminia'):
+            results = client.get(f'/{cfg.key}/catalog/series/telegram-series/search='
+                                 + quote(query, safe='') + '.json').json()['metas']
+            assert [m['id'] for m in results] == [expected]
+            assert runtime.store.catalog(query)
+        # Removing a caption must also remove its search terms.
+        runtime.store.upsert(video(1, title + '.S01E01.mkv'))
+        assert not runtime.store.catalog('השמיניה')
+        assert runtime.store.catalog('hashminia')
+
+
+def test_search_index_rebuild_repairs_old_caption_only_entries(tmp_path):
+    path = tmp_path / 'db'
+    store = Store(path)
+    entry = video(1, 'hashminia.S01E01.mkv', caption='השמיניה')
+    missing = video(2, 'Another.Show.S01E01.mkv')
+    store.upsert(entry)
+    store.upsert(missing)
+    with store.db:
+        store.db.execute('UPDATE videos SET search=? WHERE id=?', ('השמיניה', entry['id']))
+        store.db.execute('DELETE FROM search')
+        store.db.execute('INSERT INTO search VALUES (?,?)', (entry['id'], 'השמיניה'))
+        store.db.execute('PRAGMA user_version=0')
+    assert not store.catalog('hashminia')
+    store.db.close()
+    store = Store(path)
+    assert store.catalog('hashminia')[0]['id'] == entry['id']
+    assert store.catalog('השמיניה')[0]['id'] == entry['id']
+    assert store.catalog('another show')[0]['id'] == missing['id']
+    assert store.db.execute('PRAGMA user_version').fetchone()[0] == 1
+    store.db.close()
+    store = Store(path)
+    assert len(store.catalog()) == 2
+    assert store.db.execute('SELECT count(*) FROM search').fetchone()[0] == 2
+    store.db.close()
+
+
 def test_existing_index_migration(tmp_path):
     path = tmp_path / 'db'
     entry = video(1, 'Show.Name.S01 E02.mkv')
