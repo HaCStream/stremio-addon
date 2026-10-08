@@ -142,9 +142,17 @@ def create_debug_app(runtime):
     async def sync(x_debug_key: str | None = Header(None)):
         authorize(x_debug_key)
         shared = app.state.runtime
-        shared.tg.request_sync()
+        try:
+            state = shared.tg.request_sync()
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from None
         shared.record({'event': 'sync_requested', 'status': 202})
-        return {'accepted': True}
+        return {'accepted': True, 'sync': state}
+
+    @app.get('/api/sync')
+    async def sync_status(x_debug_key: str | None = Header(None)):
+        authorize(x_debug_key)
+        return {'sync': dict(app.state.runtime.tg.sync_status)}
 
     @app.post('/api/cleanup')
     async def cleanup(x_debug_key: str | None = Header(None)):
