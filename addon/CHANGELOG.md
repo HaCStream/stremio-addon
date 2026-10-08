@@ -1,5 +1,16 @@
 # Changelog
 
+<!-- release:1.5.4:start -->
+## 1.5.4
+
+## What's Changed
+* Use clearer application and server log names by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/24
+* Scan each channel once per manual sync session by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/25
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.5.3...v1.5.4
+<!-- release:1.5.4:end -->
+
 <!-- release:1.5.3:start -->
 ## 1.5.3
 
