@@ -11,7 +11,7 @@ from .tmdb import TMDB
 
 
 class Runtime:
-    """Resources shared by the addon and debug HTTP listeners."""
+    """Resources shared by the addon and Developer UI HTTP listeners."""
 
     def __init__(self, settings=None, gateway_factory=Telegram):
         self.settings = settings

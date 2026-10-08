@@ -49,7 +49,7 @@ Set these options in the add-on's Configuration tab:
 | Option / environment variable | Value |
 | --- | --- |
 | `ADDON_URL` | External HTTPS base URL of your reverse proxy |
-| `DEBUG_ENABLED` | Enable the read-only debug dashboard (default `true`) |
+| `DEBUG_ENABLED` | Enable the read-only Developer UI (default `true`) |
 | `DEBUG_HOST` | Dashboard listen address (default `0.0.0.0`) |
 | `SKIP_DEBUG_AUTH` | Open the dashboard without a key (default `false`); anyone with access can search and request a sync |
 | `API_KEY` | At least 32 random URL-safe characters |
@@ -106,7 +106,7 @@ matches public English/Hebrew title aliases or explicit mappings and serves matc
 episode streams. With a TMDB v3 API key configured under **TMDB show matching**, the background
 matcher saves show-level TMDB/IMDb identities and also accepts `tmdb:ID:S:E`
 and `tmdb:tv:ID:S:E` requests. Review ambiguous results or correct mappings in
-the debug dashboard's **TMDB matching** tab. Optional season/episode offsets
+the Developer UI's **TMDB matching** tab. Optional season/episode offsets
 apply to all episodes of the selected show; arbitrary reorderings need separate
 episode mapping and are not automated. Saved mappings survive restarts, apply
 to new episodes, and require no TMDB call during playback. Blank keys disable
@@ -118,7 +118,7 @@ and episode numbers.
 
 Optional AI search is configured with `AI_SEARCH_ENABLED`, `GEMINI_API_KEY`,
 and `REQUIRE_AI_SUFFIX_FOR_AI_SEARCH` under **AI search** in the Configuration
-tab. Debug settings are grouped under **Debug dashboard**. Enabling AI adds
+tab. Developer UI settings are grouped under **Developer UI**. Enabling AI adds
 separate **Telegram AI Movies** and **Telegram AI Series** catalogs. Gemini uses
 Google Search to find up to five titles per category, then the addon returns only
 titles matched in the local Telegram index. Only the search description is sent
@@ -129,19 +129,19 @@ with a separate `AI` word to start AI search, for example
 `ai`, and `aI` all work). Until it is present, no Gemini request is made, avoiding
 unfinished searches and quota usage while typing in clients such as Nuvio.
 Trailing whitespace is ignored, and the suffix is removed before sending the
-description. This applies to both AI catalogs and debug AI search. Set the option
+description. This applies to both AI catalogs and Developer UI AI search. Set the option
 to `false` to allow AI searches without the suffix; a supplied suffix is still
 stripped.
-No background AI indexing or embeddings are generated. The debug search displays
+No background AI indexing or embeddings are generated. The Developer UI search displays
 separate movie and series matches. **Cleanup** removes legacy embeddings and
 generated descriptions without removing Telegram entries, and reclaims database
 space. The new catalogs may require reinstalling or refreshing the addon in your
 client. Google Search grounding uses your Gemini project's quota and billing.
-The debug dashboard is available through the host port mapped to 8001. Sign in with the
+The Developer UI is available through the host port mapped to 8001. Sign in with the
 configured API key to inspect channels, indexing progress, recent searches, and
 read-only search results. It does not expose playback URLs and does not use
 `ADDON_URL` for its own requests.
-Set `SKIP_DEBUG_AUTH: true` under the debug options to open without a key. Keep
+Set `SKIP_DEBUG_AUTH: true` under the Developer UI options to open without a key. Keep
 dashboard network access restricted when using this option. The Stremio API key
 is still required for addon endpoints.
 The add-on page's **Open Web UI** button opens the dashboard on its standard

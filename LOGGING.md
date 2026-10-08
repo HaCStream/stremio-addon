@@ -11,7 +11,7 @@ Containers using UTC display `+0000`.
 Telegram discovery and sync messages use `stremio_addon.telegram`; request
 summaries use `stremio_addon.interactions`. Uvicorn lifecycle and error messages
 display as `uvicorn.server`, with their severity shown separately as INFO,
-WARNING, or ERROR. When the debug dashboard is enabled, both HTTP listeners
+WARNING, or ERROR. When the Developer UI is enabled, both HTTP listeners
 emit startup and shutdown messages.
 
 Each catalog search/browse, metadata lookup, and source lookup emits one JSON

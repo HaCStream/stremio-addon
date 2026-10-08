@@ -7,4 +7,4 @@ See [DOCS.md](DOCS.md) for building, publishing, installation, and configuration
 
 ## TMDB show matching
 
-Optionally set **TMDB show matching → TMDB_API_KEY** to your TMDB v3 API key, then restart and refresh/reinstall the addon in Nuvio/Stremio. Clear show matches are saved automatically; review ambiguous identities and numbering offsets in the debug dashboard's **TMDB matching** tab. Saved mappings provide Telegram sources under public catalog episodes using TMDB or IMDb IDs.
+Optionally set **TMDB show matching → TMDB_API_KEY** to your TMDB v3 API key, then restart and refresh/reinstall the addon in Nuvio/Stremio. Clear show matches are saved automatically; review ambiguous identities and numbering offsets in the Developer UI's **TMDB matching** tab. Saved mappings provide Telegram sources under public catalog episodes using TMDB or IMDb IDs.
