@@ -133,7 +133,7 @@ def test_search_index_rebuild_repairs_old_caption_only_entries(tmp_path):
     assert store.catalog('hashminia')[0]['id'] == entry['id']
     assert store.catalog('השמיניה')[0]['id'] == entry['id']
     assert store.catalog('another show')[0]['id'] == missing['id']
-    assert store.db.execute('PRAGMA user_version').fetchone()[0] == 1
+    assert store.db.execute('PRAGMA user_version').fetchone()[0] == 2
     store.db.close()
     store = Store(path)
     assert len(store.catalog()) == 2
@@ -158,6 +158,58 @@ def test_existing_index_migration(tmp_path):
         assert saved['series_id'] == series_id('Show Name')
         assert store.catalog('show name')[0]['id'] == entry['id']
         store.db.close()
+
+
+@pytest.mark.parametrize('filename', [
+    'hashminia.S5E21_480P.mp4', 'hashminia_S5E21_480P.mp4',
+    'hashminia.S5E21.480P.mp4', 'hashminia S5E21 480P.mp4',
+])
+def test_episode_and_quality_separators(filename):
+    parsed = parse_title(filename, 'השמיניה')
+    assert (parsed['title'], parsed['season'], parsed['episode'], parsed['quality']) == ('hashminia', 5, 21, '480P')
+
+
+def test_repair_malformed_titles_in_already_migrated_index(tmp_path):
+    path = tmp_path / 'index.sqlite3'
+    store = Store(path)
+    store.upsert(video(14, 'hashminia.S5E14_480P.mp4', caption='השמיניה'))
+    broken = video(21, 'hashminia.S5E21_480P.mp4', caption='השמיניה עונה 5 פרק 21')
+    broken.update(title='hashminia S5E21 480P', quality='')
+    store.upsert(broken)
+    movie = video(99, 'Unrelated.2024.mp4')
+    movie['title'] = 'Keep this title'
+    store.upsert(movie)
+    store.save_checkpoint(dict(channel=-100, oldest=1, newest=99, complete=1))
+    with store.db:
+        store.db.execute('INSERT INTO mappings VALUES (?,?)', (broken['id'], 'tt1234567'))
+        # Reproduce an installation that already has the series column and
+        # version-1 search migration, but still contains a legacy title.
+        store.db.execute('PRAGMA user_version=1')
+    assert len(store.grouped_catalog('series', {-100}, 'השמיניה')) == 2
+    store.db.close()
+
+    cfg = Settings(8000, 'https://example.com', 'a' * 32, 1, 'hash', 'session', tmp_path)
+    runtime = Runtime(cfg, Gateway)
+    with TestClient(create_app_with_runtime(runtime)) as client:
+        for query in ('השמיניה', 'hashminia'):
+            metas = client.get(f'/{cfg.key}/catalog/series/telegram-series/search='
+                               + quote(query, safe='') + '.json').json()['metas']
+            assert len(metas) == 1
+            assert metas[0]['name'] == 'hashminia'
+            assert [(v['season'], v['episode']) for v in metas[0]['videos']] == [(5, 14), (5, 21)]
+        episode = metas[0]['videos'][1]['id']
+        streams = client.get(f'/{cfg.key}/stream/series/{episode}.json').json()['streams']
+        assert len(streams) == 1
+        assert runtime.tokens.verify(streams[0]['url'].rsplit('/', 1)[-1], 'play') == broken['id']
+        assert runtime.store.get(broken['id'])['title'] == 'hashminia'
+        assert runtime.store.get(movie['id'])['title'] == movie['title']
+        assert runtime.store.explicit('tt1234567')[0]['id'] == broken['id']
+        assert runtime.store.checkpoint(-100)['complete'] == 1
+        assert runtime.store.db.execute('PRAGMA user_version').fetchone()[0] == 2
+    store = Store(path)
+    assert len(store.series(series_id('hashminia'), {-100})) == 2
+    assert store.db.execute('SELECT count(*) FROM search').fetchone()[0] == 3
+    store.db.close()
 
 
 def test_external_catalog_series_metadata_and_episode_streams(tmp_path):

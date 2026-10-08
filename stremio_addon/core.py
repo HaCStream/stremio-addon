@@ -47,6 +47,9 @@ def series_id(title):
 
 def parse_title(filename, caption):
     raw = re.sub(r'\.(mp4|mkv|avi|mov|webm|m4v|ts)$', '', filename, flags=re.I) or next(iter(caption.splitlines()), 'Telegram video')
+    # Underscores are regex word characters. Normalize filename separators
+    # before matching so S5E21_480P and S5E21.480P parse identically.
+    raw = re.sub(r'[._]+', ' ', raw)
     combined = raw + ' ' + caption
     ep = re.search(EPISODE_PATTERN, combined, re.I)
     numbers = [int(n) for n in ep.groups() if n is not None] if ep else []
@@ -210,35 +213,29 @@ class Store:
         CREATE TABLE IF NOT EXISTS ai_rate_limit(id INTEGER PRIMARY KEY CHECK (id=1),
           retry_at REAL NOT NULL, strikes INTEGER NOT NULL);
         ''')
-        # Reparse the persisted index once so users need no Telegram rescan.
         columns = {r['name'] for r in self.db.execute('PRAGMA table_info(videos)')}
         if 'series_id' not in columns:
             with self.db:
                 self.db.execute('ALTER TABLE videos ADD COLUMN series_id TEXT')
+        self.db.execute('CREATE INDEX IF NOT EXISTS videos_series ON videos(series_id,season,episode)')
+        self.db.commit()
+        if self.db.execute('PRAGMA user_version').fetchone()[0] < 2:
+            # Reparse episode titles even if series_id already exists: legacy
+            # titles like "hashminia S5E21 480P" otherwise form a separate show.
+            # Repair grouping and FTS together using the saved source text.
+            with self.db:
+                self.db.execute('DELETE FROM search')
                 for saved in self.db.execute('SELECT * FROM videos').fetchall():
                     row = dict(saved)
                     parsed = parse_title(row['filename'] or '', row['caption'] or '')
                     if parsed['season'] is not None:
                         row.update(parsed)
-                        row['search'] = search_text(row)
-                        self.db.execute('UPDATE videos SET title=?,year=?,season=?,episode=?,imdb=?,quality=?,search=? WHERE id=?',
-                                        [row[k] for k in ('title', 'year', 'season', 'episode', 'imdb', 'quality', 'search', 'id')])
-                        self.db.execute('DELETE FROM search WHERE id=?', (row['id'],))
-                        self.db.execute('INSERT INTO search VALUES (?,?)', (row['id'], row['search']))
-                    identifier = series_id(row['title']) if row['season'] is not None and row['episode'] is not None else None
-                    self.db.execute('UPDATE videos SET series_id=? WHERE id=?', (identifier, row['id']))
-        self.db.execute('CREATE INDEX IF NOT EXISTS videos_series ON videos(series_id,season,episode)')
-        self.db.commit()
-        if self.db.execute('PRAGMA user_version').fetchone()[0] < 1:
-            # Refresh every persisted title/filename/caption, including old
-            # caption-only or missing FTS entries. No Telegram requests needed.
-            with self.db:
-                self.db.execute('DELETE FROM search')
-                for saved in self.db.execute('SELECT * FROM videos').fetchall():
-                    text = search_text(dict(saved))
-                    self.db.execute('UPDATE videos SET search=? WHERE id=?', (text, saved['id']))
-                    self.db.execute('INSERT INTO search VALUES (?,?)', (saved['id'], text))
-                self.db.execute('PRAGMA user_version=1')
+                    row['series_id'] = series_id(row['title']) if row['season'] is not None and row['episode'] is not None else None
+                    row['search'] = search_text(row)
+                    self.db.execute('UPDATE videos SET title=?,year=?,season=?,episode=?,imdb=?,quality=?,series_id=?,search=? WHERE id=?',
+                                    [row[k] for k in ('title', 'year', 'season', 'episode', 'imdb', 'quality', 'series_id', 'search', 'id')])
+                    self.db.execute('INSERT INTO search VALUES (?,?)', (row['id'], row['search']))
+                self.db.execute('PRAGMA user_version=2')
 
     def upsert(self, row):
         row = dict(row, series_id=series_id(row['title'])
