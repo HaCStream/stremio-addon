@@ -1,5 +1,16 @@
 # Changelog
 
+<!-- release:1.5.3:start -->
+## 1.5.3
+
+## What's Changed
+* Include joined public Telegram channels by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/22
+* Show sync progress and completion in the debug dashboard by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/23
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.5.2...v1.5.3
+<!-- release:1.5.3:end -->
+
 <!-- release:1.5.2:start -->
 ## 1.5.2
 
