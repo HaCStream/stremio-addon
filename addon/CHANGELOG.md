@@ -1,5 +1,15 @@
 # Changelog
 
+<!-- release:1.5.6:start -->
+## 1.5.6
+
+## What's Changed
+* Repair saved episode titles that split a show into separate groups by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/27
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.5.5...v1.5.6
+<!-- release:1.5.6:end -->
+
 <!-- release:1.5.5:start -->
 ## 1.5.5
 
