@@ -298,6 +298,27 @@ class FakeTelegram:
         return dict(self.sync_status)
 
 
+@pytest.mark.parametrize('updates,kind,expected_name,expected_title', [
+    ({}, 'movie', 'שם הסרט 2024.mp4', 'שם הסרט · 1080p\n10 B · ערוץ'),
+    ({'title': 'השמיניה', 'filename': 'hashminia.S05E21_480P.mp4',
+      'season': 5, 'episode': 21, 'quality': '480P', 'size': 512 * 1024**2},
+     'series', 'hashminia.S05E21_480P.mp4', 'השמיניה · 480P\n512.00 MB · ערוץ'),
+    ({'filename': '', 'season': 1, 'episode': 2, 'quality': '', 'size': 2 * 1024**3},
+     'series', 'שם הסרט S01E02', 'שם הסרט\n2.00 GB · ערוץ'),
+])
+def test_stream_display_labels(tmp_path, updates, kind, expected_name, expected_title):
+    cfg = Settings(8000, 'https://example.com', 'a' * 32, 1, 'hash', 'session', tmp_path)
+    app = create_app(cfg, FakeTelegram)
+    with TestClient(app) as client:
+        entry = row(**updates)
+        app.state.store.upsert(entry)
+        streams = client.get(f"/{cfg.key}/stream/{kind}/{entry['id']}.json").json()['streams']
+        assert len(streams) == 1
+        assert streams[0]['name'] == expected_name
+        assert streams[0]['title'] == expected_title
+        assert app.state.tokens.verify(streams[0]['url'].rsplit('/', 1)[-1], 'play') == entry['id']
+
+
 def test_debug_dashboard_is_read_only_and_shows_queried_channels(tmp_path):
     key = 'a' * 32
     cfg = Settings(8000, 'https://public.example.com/prefix', key, 1, 'hash',

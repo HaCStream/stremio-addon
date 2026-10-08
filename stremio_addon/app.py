@@ -21,6 +21,20 @@ interaction_log = logging.getLogger('stremio_addon.interactions')
 interaction_log.setLevel(logging.INFO)
 
 
+def stream_labels(row):
+    name = row['filename'] or row['title']
+    if not row['filename'] and row['season'] is not None and row['episode'] is not None:
+        name += f" S{row['season']:02d}E{row['episode']:02d}"
+    details = ' · '.join(value for value in (row['title'], row['quality']) if value)
+    size = row['size']
+    for unit in ('B', 'KB', 'MB', 'GB', 'TB'):
+        if size < 1024 or unit == 'TB':
+            break
+        size /= 1024
+    formatted_size = f'{size:.0f} B' if unit == 'B' else f'{size:.2f} {unit}'
+    return {'name': name, 'title': f"{details}\n{formatted_size} · {row['channel_name']}"}
+
+
 def safe_log_text(value, cfg):
     text = str(value)
     for secret in (cfg.key, cfg.session, cfg.api_hash, cfg.gemini_api_key, cfg.tmdb_api_key):
@@ -227,7 +241,7 @@ def create_app_with_runtime(runtime):
             rows = await app.state.metadata.match(app.state.store, kind, item)
         rows = [r for r in rows if r['channel'] in app.state.tg.channels]
         results(request, rows)
-        return {'streams': [{'name': 'Telegram ' + r['quality'], 'title': f"{r['title']}\n{r['channel_name']} · {r['size'] / 1024**3:.2f} GB", 'url': url(r, 'play'), 'behaviorHints': {'notWebReady': True}} for r in rows if r['channel'] in app.state.tg.channels]}
+        return {'streams': [{**stream_labels(r), 'url': url(r, 'play'), 'behaviorHints': {'notWebReady': True}} for r in rows]}
 
     @app.get('/{key}/status')
     async def status(key):
