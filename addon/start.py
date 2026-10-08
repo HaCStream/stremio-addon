@@ -1,5 +1,6 @@
 """Translate Supervisor options to the application's environment, without logging secrets."""
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -55,7 +56,10 @@ def main():
             "the add-on's user_session_string option."
         )
     debug = f" and debug dashboard on {settings.debug_host}:{settings.debug_port}" if settings.debug_enabled else ""
-    print(f"Starting Stremio Telegram on port {settings.port}{debug}", flush=True)
+    logging.basicConfig(level=logging.INFO, stream=sys.stdout,
+                        format="%(asctime)s %(levelname)s: %(name)s: %(message)s",
+                        datefmt="%Y-%m-%dT%H:%M:%S%z")
+    logging.getLogger(__name__).info("Starting Stremio Telegram on port %s%s", settings.port, debug)
     os.execv(sys.executable, [sys.executable, "-m", "addon"])
 
 

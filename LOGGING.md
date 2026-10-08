@@ -3,6 +3,11 @@
 Interaction summaries are enabled by default at INFO level and appear in the
 Home Assistant add-on log or `docker compose logs -f addon`.
 
+Every application log entry, including server and Home Assistant startup logs,
+is prefixed with the date, time, and UTC offset in the runtime's local timezone.
+For example: `2026-10-08T12:28:25+0300 INFO: addon.app: ...`.
+Containers using UTC display `+0000`.
+
 Each catalog search/browse, metadata lookup, and source lookup emits one JSON
 summary with its event, query or item ID, HTTP status and duration in milliseconds.
 Successful lookups include the returned result count, distinct channel count,
