@@ -140,9 +140,10 @@ def test_catalog_types_suffix_playback_and_errors(tmp_path, suffix_required):
         def path(kind, query):
             return f'/{cfg.key}/catalog/{kind}/telegram-ai-{kind}/search=' + quote(query, safe='') + '.json'
         if suffix_required:
+            # The parser tests cover the suffix matrix; this verifies both
+            # catalog routes skip Gemini for an unfinished query.
             for kind in ('movie', 'series'):
-                for query in ('repeating', 'repeating day', 'AI repeating day', 'repeating day.', 'repeating day a', 'samurai', 'ai', ''):
-                    assert client.get(path(kind, query)).json()['metas'] == []
+                assert client.get(path(kind, 'repeating day')).json()['metas'] == []
             assert not calls
         movies = client.get(path('movie', 'repeating day' + suffix)).json()['metas']
         series = client.get(path('series', 'repeating day' + (' AI' if suffix_required else ''))).json()['metas']
@@ -217,11 +218,9 @@ async def test_invalid_response(tmp_path, answer):
     store.db.close()
 
 
-@pytest.mark.parametrize('suffix_required', [True, False])
-def test_debug_cleanup_search_and_no_embedding_state(tmp_path, suffix_required):
+def test_debug_cleanup_and_no_embedding_state(tmp_path):
     from stremio_addon.debug import create_debug_app
-    cfg = config(tmp_path, suffix_required=suffix_required)
-    suffix = ' ai' if suffix_required else ''
+    cfg = config(tmp_path)
     runtime = Runtime(cfg, FakeTelegram)
     with TestClient(create_debug_app(runtime)) as client:
         headers = {'X-Debug-Key': cfg.key}
@@ -238,6 +237,19 @@ def test_debug_cleanup_search_and_no_embedding_state(tmp_path, suffix_required):
         assert runtime.store.get('tg:-100:1')
         assert runtime.store.catalog('Groundhog')
         assert not runtime.store.db.execute("SELECT name FROM sqlite_master WHERE name IN ('ai_embeddings','ai_descriptions')").fetchall()
+        html = client.get('/').text
+        assert 'AI indexed' not in html and 'ai_index' not in html and 'AI index' not in html
+        assert 'ai-search-form' in html and 'id="cleanup"' in html
+
+
+@pytest.mark.parametrize('suffix_required', [True, False])
+def test_debug_ai_search(tmp_path, suffix_required):
+    from stremio_addon.debug import create_debug_app
+    cfg = config(tmp_path, suffix_required=suffix_required)
+    suffix = ' ai' if suffix_required else ''
+    runtime = Runtime(cfg, FakeTelegram)
+    with TestClient(create_debug_app(runtime)) as client:
+        headers = {'X-Debug-Key': cfg.key}
         calls = []
         async def discover(query):
             calls.append(query)
@@ -245,8 +257,7 @@ def test_debug_cleanup_search_and_no_embedding_state(tmp_path, suffix_required):
         runtime.ai.discover = discover
         assert client.get('/api/overview', headers=headers).json()['require_ai_suffix_for_ai_search'] == suffix_required
         if suffix_required:
-            for query in ('repeating', 'repeating day', 'AI repeating day', 'repeating day.', 'repeating day a', 'samurai', 'ai', ''):
-                assert client.get('/api/search', params={'mode': 'ai', 'q': query}, headers=headers).json()['results'] == []
+            assert client.get('/api/search', params={'mode': 'ai', 'q': 'repeating day'}, headers=headers).json()['results'] == []
             assert not calls
         result = client.get('/api/search', params={'mode': 'ai', 'q': 'repeating day' + suffix}, headers=headers).json()
         assert [r['title'] for r in result['movies']] == ['Groundhog Day']
@@ -258,9 +269,6 @@ def test_debug_cleanup_search_and_no_embedding_state(tmp_path, suffix_required):
         response = client.get('/api/search', params={'mode': 'ai', 'q': 'new query' + suffix}, headers=headers)
         assert response.status_code == 502
         assert 'private upstream' not in response.text
-        html = client.get('/').text
-        assert 'AI indexed' not in html and 'ai_index' not in html and 'AI index' not in html
-        assert 'ai-search-form' in html and 'id="cleanup"' in html
 
 
 def test_disabled_ai_and_cleanup(tmp_path):
