@@ -1,5 +1,17 @@
 # Changelog
 
+<!-- release:1.5.2:start -->
+## 1.5.2
+
+## What's Changed
+* Fix misleading disabled AI message on debug screen by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/19
+* Add date and time to logs by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/20
+* Show Gemini request and response in debug AI search by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/21
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.5.1...v1.5.2
+<!-- release:1.5.2:end -->
+
 <!-- release:1.5.1:start -->
 ## 1.5.1
 

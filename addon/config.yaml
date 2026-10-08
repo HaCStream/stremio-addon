@@ -1,5 +1,5 @@
 name: Stremio Telegram
-version: "1.5.1"
+version: "1.5.2"
 slug: stremio_telegram
 description: A self-hosted addon that connects to your Telegram user account, discovers joined private broadcast channels, and indexes uploaded videos for browsing, searching, and streaming through your server
 
