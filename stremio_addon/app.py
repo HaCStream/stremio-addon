@@ -106,12 +106,22 @@ def create_app_with_runtime(runtime):
     def url(row, scope):
         return f'{app.state.cfg.url}/{scope}/{app.state.tokens.sign(row["id"], scope)}'
 
-    def meta(row, kind='movie'):
+    def meta(row, kind='movie', episodes=None, identifier=None):
         result = {'id': row['id'], 'type': kind, 'name': row['title'], 'posterShape': 'landscape', 'poster': url(row, 'thumb'), 'description': row['caption'] + '\n\n' + row['channel_name'], 'releaseInfo': str(row['year'] or ''), 'behaviorHints': {'defaultVideoId': row['id']}}
         if kind == 'series':
-            result['videos'] = [{'id': row['id'], 'title': row['title'],
-                                 'season': row['season'] if row['season'] is not None else 1,
-                                 'episode': row['episode'] if row['episode'] is not None else 1}]
+            identifier = identifier or row['series_id'] or row['id']
+            if episodes is None:
+                episodes = app.state.store.series(identifier, app.state.tg.channels) or [row]
+            result['id'] = identifier
+            result.pop('behaviorHints')
+            videos = {}
+            for episode in episodes:
+                season = episode['season'] if episode['season'] is not None else 1
+                number = episode['episode'] if episode['episode'] is not None else 1
+                videos.setdefault((season, number), {
+                    'id': f'{identifier}:{season}:{number}' if identifier != row['id'] else episode['id'],
+                    'title': f'Episode {number}', 'season': season, 'episode': number})
+            result['videos'] = [videos[key] for key in sorted(videos)]
         return result
 
     @app.get('/healthz')
@@ -122,6 +132,8 @@ def create_app_with_runtime(runtime):
     async def manifest(key):
         auth(key)
         catalogs = [{'type': 'movie', 'id': 'telegram', 'name': 'Telegram Videos', 'extra': [{'name': 'search', 'isRequired': False}, {'name': 'skip', 'isRequired': False}]}]
+        catalogs.append({'type': 'series', 'id': 'telegram-series', 'name': 'Telegram Series',
+                         'extra': [{'name': 'search', 'isRequired': False}, {'name': 'skip', 'isRequired': False}]})
         if app.state.cfg.ai_search_enabled:
             for kind, name in (('movie', 'Movies'), ('series', 'Series')):
                 catalogs.append({'type': kind, 'id': 'telegram-ai-' + kind,
@@ -132,7 +144,10 @@ def create_app_with_runtime(runtime):
                 'description': 'Stream your private Telegram videos',
                 'logo': 'https://raw.githubusercontent.com/HaCStream/stremio-addon/main/stremio_addon/icon.png',
                 'types': ['movie', 'series'],
-                'resources': [{'name': 'catalog', 'types': ['movie', 'series']}, {'name': 'meta', 'types': ['movie', 'series'], 'idPrefixes': ['tg:']}, {'name': 'stream', 'types': ['movie', 'series'], 'idPrefixes': ['tg:', 'tt']}],
+                'resources': [{'name': 'catalog', 'types': ['movie', 'series']},
+                              {'name': 'meta', 'types': ['movie'], 'idPrefixes': ['tg:']},
+                              {'name': 'meta', 'types': ['series'], 'idPrefixes': ['tg:', 'tt']},
+                              {'name': 'stream', 'types': ['movie', 'series'], 'idPrefixes': ['tg:', 'tt']}],
                 'catalogs': catalogs}
 
     @app.get('/{key}/catalog/{kind}/{catalog_id}.json')
@@ -144,7 +159,7 @@ def create_app_with_runtime(runtime):
         interaction(request, 'catalog_search' if query else 'catalog_browse', query=query,
                     type=kind, catalog=catalog_id, result_count=0)
         ai_catalog = kind in ('movie', 'series') and catalog_id == 'telegram-ai-' + kind
-        if not ai_catalog and not (kind == 'movie' and catalog_id == 'telegram'):
+        if not ai_catalog and (kind, catalog_id) not in (('movie', 'telegram'), ('series', 'telegram-series')):
             return {'metas': []}
         try:
             skip = int(args.get('skip', ['0'])[0])
@@ -165,7 +180,7 @@ def create_app_with_runtime(runtime):
                     request.state.interaction['ai_status'] = type(exc).__name__
                     rows = []
         else:
-            rows = [r for r in app.state.store.catalog(query, skip) if r['channel'] in app.state.tg.channels]
+            rows = app.state.store.grouped_catalog(kind, app.state.tg.channels, query, skip)
         results(request, rows)
         return {'metas': [meta(r, kind) for r in rows]}
 
@@ -173,10 +188,24 @@ def create_app_with_runtime(runtime):
     async def detail(key, kind, item, request: Request):
         auth(key)
         interaction(request, 'meta_lookup', type=kind, item=item)
-        row = app.state.store.get(item)
-        rows = [row] if kind in ('movie', 'series') and row and row['channel'] in app.state.tg.channels else []
+        rows = []
+        identifier = None
+        if kind == 'series' and re.fullmatch(r'tg:series:[0-9a-f]{24}', item):
+            rows = app.state.store.series(item, app.state.tg.channels)
+            identifier = item
+        elif kind == 'series' and re.fullmatch(r'tt\d{7,10}', item):
+            rows = await app.state.metadata.match(app.state.store, kind, item)
+            rows = [r for r in rows if r['channel'] in app.state.tg.channels]
+            identifier = item
+        else:
+            row = app.state.store.get(item)
+            if kind in ('movie', 'series') and row and row['channel'] in app.state.tg.channels:
+                rows = [row]
+                if kind == 'series' and row['series_id']:
+                    identifier = row['series_id']
+                    rows = app.state.store.series(identifier, app.state.tg.channels)
         results(request, rows)
-        return {'meta': meta(row, kind) if rows else None}
+        return {'meta': meta(rows[0], kind, rows if identifier else None, identifier) if rows else None}
 
     @app.get('/{key}/stream/{kind}/{item}.json')
     async def sources(key, kind, item, request: Request):
@@ -185,7 +214,10 @@ def create_app_with_runtime(runtime):
                     match_mode='telegram_id' if item.startswith('tg:') else 'metadata', result_count=0)
         if kind not in ('movie', 'series'):
             return {'streams': []}
-        if item.startswith('tg:'):
+        episode = re.fullmatch(r'(tg:series:[0-9a-f]{24}):(\d+):(\d+)', item)
+        if kind == 'series' and episode:
+            rows = app.state.store.series(episode[1], app.state.tg.channels, int(episode[2]), int(episode[3]))
+        elif item.startswith('tg:'):
             row = app.state.store.get(item)
             rows = [row] if row else []
         else:
@@ -262,3 +294,4 @@ def create_app_with_runtime(runtime):
     return app
 
 app = create_app()
+

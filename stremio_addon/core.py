@@ -19,17 +19,26 @@ def normalize(text):
     return ' '.join(re.sub(r'[^\w]+', ' ', text, flags=re.UNICODE).replace('_', ' ').split())
 
 
+EPISODE_PATTERN = r'(?<![A-Za-z0-9])S(\d{1,2})[ ._-]*E(\d{1,3})(?!\d)|עונה[\s._-]*(\d+)[\s,.:/_-]*פרק[\s._-]*(\d+)'
+
+
+def series_id(title):
+    return 'tg:series:' + hashlib.sha256(normalize(title).encode()).hexdigest()[:24]
+
+
 def parse_title(filename, caption):
     raw = re.sub(r'\.(mp4|mkv|avi|mov|webm|m4v|ts)$', '', filename, flags=re.I) or next(iter(caption.splitlines()), 'Telegram video')
     combined = raw + ' ' + caption
-    ep = re.search(r'\bS(\d{1,2})[ ._-]*E(\d{1,3})\b', combined, re.I) or re.search(r'עונה\s*(\d+)\s*[,.:/\- ]*פרק\s*(\d+)', combined)
+    ep = re.search(EPISODE_PATTERN, combined, re.I)
+    numbers = [int(n) for n in ep.groups() if n is not None] if ep else []
     year = re.search(r'\b(19\d{2}|20\d{2})\b', combined)
     imdb = re.search(r'\btt\d{7,10}\b', combined)
     quality = re.search(r'\b(2160p|1080p|720p|480p|4k)\b', combined, re.I)
-    title = re.split(r'\b(?:19\d{2}|20\d{2}|S\d{1,2}E\d{1,3}|2160p|1080p|720p|480p|WEB[ .-]?DL|BluRay)\b|עונה\s*\d+', raw, maxsplit=1, flags=re.I)[0]
+    title = re.split(EPISODE_PATTERN, raw, maxsplit=1, flags=re.I)[0]
+    title = re.split(r'\b(?:19\d{2}|20\d{2}|2160p|1080p|720p|480p|WEB[ .-]?DL|BluRay)\b', title, maxsplit=1, flags=re.I)[0]
     title = re.sub(r'[._]+', ' ', title).strip(' -[]()') or raw
     return dict(title=title, year=int(year[0]) if year else None,
-                season=int(ep[1]) if ep else None, episode=int(ep[2]) if ep else None,
+                season=numbers[0] if ep else None, episode=numbers[1] if ep else None,
                 imdb=imdb[0] if imdb else None, quality=quality[0] if quality else '')
 
 
@@ -182,8 +191,30 @@ class Store:
         CREATE TABLE IF NOT EXISTS ai_rate_limit(id INTEGER PRIMARY KEY CHECK (id=1),
           retry_at REAL NOT NULL, strikes INTEGER NOT NULL);
         ''')
+        # Reparse the persisted index once so users need no Telegram rescan.
+        columns = {r['name'] for r in self.db.execute('PRAGMA table_info(videos)')}
+        if 'series_id' not in columns:
+            with self.db:
+                self.db.execute('ALTER TABLE videos ADD COLUMN series_id TEXT')
+                for saved in self.db.execute('SELECT * FROM videos').fetchall():
+                    row = dict(saved)
+                    parsed = parse_title(row['filename'] or '', row['caption'] or '')
+                    if parsed['season'] is not None:
+                        row.update(parsed)
+                        row['search'] = normalize(' '.join(str(row.get(k) or '')
+                                                          for k in ('title', 'filename', 'caption')))
+                        self.db.execute('UPDATE videos SET title=?,year=?,season=?,episode=?,imdb=?,quality=?,search=? WHERE id=?',
+                                        [row[k] for k in ('title', 'year', 'season', 'episode', 'imdb', 'quality', 'search', 'id')])
+                        self.db.execute('DELETE FROM search WHERE id=?', (row['id'],))
+                        self.db.execute('INSERT INTO search VALUES (?,?)', (row['id'], row['search']))
+                    identifier = series_id(row['title']) if row['season'] is not None and row['episode'] is not None else None
+                    self.db.execute('UPDATE videos SET series_id=? WHERE id=?', (identifier, row['id']))
+        self.db.execute('CREATE INDEX IF NOT EXISTS videos_series ON videos(series_id,season,episode)')
+        self.db.commit()
 
     def upsert(self, row):
+        row = dict(row, series_id=series_id(row['title'])
+                   if row.get('season') is not None and row.get('episode') is not None else None)
         row = dict(row, search=normalize(' '.join(str(row.get(k) or '') for k in ('title', 'filename', 'caption'))))
         with self.db:
             self.db.execute('INSERT OR REPLACE INTO videos (' + ','.join(row) + ') VALUES (' + ','.join('?' for _ in row) + ')', list(row.values()))
@@ -207,6 +238,36 @@ class Store:
         else:
             rows = self.db.execute('SELECT * FROM videos ORDER BY date DESC,id LIMIT ? OFFSET ?', (limit, skip))
         return [dict(r) for r in rows]
+
+    def grouped_catalog(self, kind, allowed, query='', skip=0, limit=100):
+        if not allowed:
+            return []
+        terms = normalize(query).split()[:30]
+        join = ' JOIN search s ON s.id=v.id' if terms else ''
+        where = 'v.channel IN (' + ','.join('?' for _ in allowed) + ')'
+        params = list(sorted(allowed))
+        where += ' AND v.series_id IS ' + ('NOT NULL' if kind == 'series' else 'NULL')
+        if terms:
+            where += ' AND s.text MATCH ?'
+            params.append(' AND '.join('"' + t + '"*' for t in terms))
+        # Group before pagination; hundreds of episodes still count as one show.
+        rows = self.db.execute(
+            'SELECT * FROM (SELECT v.*, ROW_NUMBER() OVER ('
+            'PARTITION BY COALESCE(v.series_id,v.id) ORDER BY v.date DESC,v.id) AS position '
+            'FROM videos v' + join + ' WHERE ' + where + ') WHERE position=1 '
+            'ORDER BY date DESC,id LIMIT ? OFFSET ?', (*params, limit, skip))
+        return [dict(r) for r in rows]
+
+    def series(self, identifier, allowed, season=None, episode=None):
+        if not allowed:
+            return []
+        where = 'series_id=? AND channel IN (' + ','.join('?' for _ in allowed) + ')'
+        params = [identifier, *sorted(allowed)]
+        if season is not None and episode is not None:
+            where += ' AND season=? AND episode=?'
+            params.extend((season, episode))
+        return [dict(r) for r in self.db.execute(
+            'SELECT * FROM videos WHERE ' + where + ' ORDER BY season,episode,date DESC,id', params)]
 
     def title_matches(self, title, allowed):
         terms = normalize(title).split()[:30]
@@ -246,3 +307,4 @@ class Store:
     def save_checkpoint(self, p):
         with self.db:
             self.db.execute('INSERT OR REPLACE INTO checkpoints VALUES (:channel,:oldest,:newest,:complete)', p)
+

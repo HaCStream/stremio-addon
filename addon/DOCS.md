@@ -90,6 +90,20 @@ https://YOUR_DOMAIN/YOUR_API_KEY/manifest.json
 ```
 
 The protected `/<your-api-key>/status` endpoint shows Telegram indexing progress.
+Files containing episode markers such as `S01E02`, `S01 E02`, or
+`עונה 1 פרק 2` appear once per show in **Telegram Series**. Opening a show lists
+its indexed episodes in season/episode order; multiple files for the same episode
+appear as separate playback choices. These files are excluded from **Telegram Videos**.
+AI series results use the same grouping. Existing entries are updated automatically
+on the first startup after upgrading, without a Telegram rescan.
+For shows opened from other catalogs using standard IMDb IDs (`tt...`), the addon
+matches public English/Hebrew title aliases or explicit mappings and serves matching
+episode streams. Other catalogs with unrelated ID formats are not matched.
+Refresh or reinstall the addon in Nuvio/Stremio after upgrading so the client loads
+the new series catalog and metadata capabilities. The client may still choose another
+metadata provider for an external show; playback matching uses its requested season
+and episode numbers.
+
 Optional AI search is configured with `AI_SEARCH_ENABLED`, `GEMINI_API_KEY`,
 and `REQUIRE_AI_SUFFIX_FOR_AI_SEARCH` under **AI search** in the Configuration
 tab. Debug settings are grouped under **Debug dashboard**. Enabling AI adds
@@ -130,3 +144,4 @@ Supervisor-owned `/data/options.json` and write the add-on data directory. The
 repository's root Dockerfile therefore does not set `USER addon`.
 
 Reference: [Home Assistant add-on configuration](https://developers.home-assistant.io/docs/add-ons/configuration/).
+
