@@ -1,5 +1,7 @@
 """Online Gemini discovery matched against the ordinary Telegram index."""
 import asyncio
+from contextvars import ContextVar
+from copy import deepcopy
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import json
@@ -11,6 +13,7 @@ import httpx
 GENERATE_MODEL = 'gemini-3.8-flash'
 API = 'https://generativelanguage.googleapis.com/v1beta/models/'
 MIN_REQUEST_INTERVAL = 2
+gemini_diagnostics = ContextVar('gemini_diagnostics', default=None)
 
 
 class GeminiCooldown(httpx.HTTPError):
@@ -75,12 +78,23 @@ class AISearch:
             await self.http.aclose()
 
     async def request(self, model, action, body):
+        diagnostics = gemini_diagnostics.get()
+        if diagnostics is not None:
+            diagnostics.update(model=model, request=deepcopy(body), sent=False)
         async with self.request_lock:
             if self.cooldown_remaining():
                 raise GeminiCooldown('Gemini rate limit cooldown active')
             await asyncio.sleep(max(0, MIN_REQUEST_INTERVAL - (time.monotonic() - self.last_request)))
+            if diagnostics is not None:
+                diagnostics['sent'] = True
             response = await self.http.post(API + model + ':' + action,
                 headers={'x-goog-api-key': self.config.gemini_api_key}, json=body)
+            if diagnostics is not None:
+                diagnostics['http_status'] = response.status_code
+                try:
+                    diagnostics['response'] = response.json()
+                except ValueError:
+                    diagnostics['response'] = response.text
             self.last_request = time.monotonic()
             if response.status_code == 429:
                 delay = self._retry_delay(response)
@@ -128,13 +142,24 @@ class AISearch:
         # titles only: availability is always checked against the current index.
         key = query.casefold()
         async with self.search_lock:
+            diagnostics = gemini_diagnostics.get()
             cached = self.cache.get(key)
             if cached and time.monotonic() - cached[0] < 300:
+                if diagnostics is not None and not diagnostics:
+                    diagnostics.update(deepcopy(cached[2]), source='cache')
                 return cached[1]
-            titles = await self.discover(query)
+            exchange = {'source': 'live', 'sent': False}
+            token = gemini_diagnostics.set(exchange)
+            try:
+                titles = await self.discover(query)
+                exchange['titles'] = titles
+            finally:
+                gemini_diagnostics.reset(token)
+                if diagnostics is not None:
+                    diagnostics.update(deepcopy(exchange))
             if len(self.cache) >= 100:
                 self.cache.pop(next(iter(self.cache)))
-            self.cache[key] = (time.monotonic(), titles)
+            self.cache[key] = (time.monotonic(), titles, exchange)
             return titles
 
     async def search(self, query, allowed, skip=0, kind='movie'):

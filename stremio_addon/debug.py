@@ -6,9 +6,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
-from .ai_search import ai_query, GeminiCooldown
+from .ai_search import ai_query, GeminiCooldown, gemini_diagnostics
 from .core import normalize
 from .version import get_version
 
@@ -61,6 +61,18 @@ def create_debug_app(runtime):
 
     def channel_title(entity, channel):
         return str(getattr(entity, 'title', None) or channel)
+
+    def redact_diagnostics(value):
+        if isinstance(value, dict):
+            return {redact_diagnostics(k): redact_diagnostics(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [redact_diagnostics(v) for v in value]
+        if isinstance(value, str):
+            for secret in (app.state.runtime.cfg.key, app.state.runtime.cfg.session,
+                           app.state.runtime.cfg.api_hash, app.state.runtime.cfg.gemini_api_key):
+                if secret:
+                    value = value.replace(secret, '[redacted]')
+        return value
 
     def channels():
         shared = app.state.runtime
@@ -160,14 +172,27 @@ def create_debug_app(runtime):
             if not shared.ai:
                 raise HTTPException(409, 'AI features are not enabled')
             clean = ai_query(q, shared.cfg.require_ai_suffix_for_ai_search)
+            diagnostics = {}
+            token = gemini_diagnostics.set(diagnostics)
             try:
                 grouped = {name: await shared.ai.search(clean, allowed, skip, media_type) if clean else []
                            for name, media_type in (('movies', 'movie'), ('series', 'series'))}
+                if not clean:
+                    diagnostics.update(source='skipped', sent=False, reason=(
+                        'Finish your description with a separate AI word to submit it to Gemini.'
+                        if clean is None else 'Enter a non-empty description before the AI suffix.'))
             except GeminiCooldown:
-                raise HTTPException(429, 'Gemini rate limited; retry in '
-                                    + str(shared.ai.cooldown_remaining()) + ' seconds') from None
-            except Exception:
-                raise HTTPException(502, 'AI search failed; check Gemini availability and configuration') from None
+                return JSONResponse(status_code=429, content={
+                    'detail': 'Gemini rate limited; retry in '
+                              + str(shared.ai.cooldown_remaining()) + ' seconds',
+                    'gemini': redact_diagnostics(diagnostics)})
+            except Exception as exc:
+                diagnostics['error_type'] = type(exc).__name__
+                return JSONResponse(status_code=502, content={
+                    'detail': 'AI search failed; inspect the Gemini exchange below.',
+                    'gemini': redact_diagnostics(diagnostics)})
+            finally:
+                gemini_diagnostics.reset(token)
             matched = [(row, 'AI online title match') for rows in grouped.values() for row in rows]
         elif mode == 'text':
             rows = shared.store.catalog(q, skip, 100) if q.strip() else []
@@ -199,7 +224,8 @@ def create_debug_app(runtime):
             'channels_queried': available, 'results_by_channel': per_channel,
             'resolved_aliases': aliases, 'resolved_year': resolved_year,
             **({'movies': [result_row(row, 'AI online title match') for row in grouped['movies']],
-                'series': [result_row(row, 'AI online title match') for row in grouped['series']]}
+                'series': [result_row(row, 'AI online title match') for row in grouped['series']],
+                'gemini': redact_diagnostics(diagnostics)}
                if mode == 'ai' else {}),
         }
 
