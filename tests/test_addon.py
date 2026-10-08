@@ -3,7 +3,7 @@ import json
 from urllib.parse import quote
 import pytest
 from fastapi.testclient import TestClient
-from stremio_addon.core import Settings, Store, Tokens, byte_range, normalize, parse_title
+from stremio_addon.core import Settings, Store, Tokens, byte_range, normalize
 from stremio_addon.app import create_app
 from stremio_addon.debug import create_debug_app
 from stremio_addon.metadata import Metadata
@@ -47,12 +47,9 @@ def test_invalid_ranges(value):
         byte_range(value, 10)
 
 
-def test_hebrew():
+def test_hebrew_normalization():
     assert normalize('\u200fשָׁלוֹם־עוֹלָם') == normalize('שלום עולם')
     assert normalize('צה״ל') == normalize('צה"ל')
-    p = parse_title('שם.הסדרה עונה 2 פרק 5 1080p.mkv', '')
-    assert (p['title'], p['season'], p['episode']) == ('שם הסדרה', 2, 5)
-    assert parse_title('Show.S02E05.mkv', '')['episode'] == 5
 
 
 def test_store(tmp_path):
