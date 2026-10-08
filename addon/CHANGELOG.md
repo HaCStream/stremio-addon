@@ -1,5 +1,16 @@
 # Changelog
 
+<!-- release:1.5.8:start -->
+## 1.5.8
+
+## What's Changed
+* Match Telegram shows with TMDB for public catalog episode sources by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/29
+* test: remove redundant checks and repeated cleanup runs by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/30
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.5.7...v1.5.8
+<!-- release:1.5.8:end -->
+
 <!-- release:1.5.7:start -->
 ## 1.5.7
 
