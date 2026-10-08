@@ -597,7 +597,10 @@ async def test_manual_sync_lifecycle(tmp_path, caplog, failure):
     async def reconcile():
         pass
 
-    gateway.discover, gateway.scan, gateway.reconcile = discover, scan, reconcile
+    gateway.discover, gateway.scan_history, gateway.reconcile = discover, scan, reconcile
+    async def catch_up(channel, entity):
+        pass
+    gateway.scan_new_messages = catch_up
     requested = gateway.request_sync()
     assert requested['state'] == 'queued'
     assert gateway.request_sync()['id'] == requested['id']
@@ -636,6 +639,71 @@ async def test_manual_sync_lifecycle(tmp_path, caplog, failure):
             await task
         except asyncio.CancelledError:
             pass
+        store.db.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('flood', [False, True])
+async def test_sync_scans_each_channel_once_and_resumes_history(tmp_path, flood):
+    import asyncio
+    from telethon import errors
+
+    store = Store(tmp_path / 'db')
+    gateway = Telegram(Settings(8000, 'http://localhost', 'a'*32, 1, 'hash', '', tmp_path), store)
+    store.save_checkpoint(dict(channel=1, newest=10, oldest=1, complete=1))
+    store.save_checkpoint(dict(channel=2, newest=305, oldest=206, complete=0))
+    catch_ups, history_offsets, indexed, reconciliations = [], [], [], []
+    flood_pending = flood
+
+    class Client:
+        async def iter_messages(self, entity, min_id, reverse):
+            catch_ups.append((entity, min_id))
+            if entity == 2 and min_id == 305:
+                yield SimpleNamespace(id=306)
+
+        async def get_messages(self, entity, limit, offset_id):
+            nonlocal flood_pending
+            assert entity == 2, 'Completed channels must not be scanned again'
+            if flood_pending:
+                flood_pending = False
+                raise errors.FloodWaitError(request=None, capture=0)
+            history_offsets.append(offset_id)
+            return [SimpleNamespace(id=i) for i in range(offset_id - 1, 0, -1)][:limit]
+
+    async def discover():
+        gateway.channels = {1: 1, 2: 2}
+
+    async def reconcile():
+        reconciliations.append(True)
+
+    gateway.client = Client()
+    gateway.discover, gateway.reconcile = discover, reconcile
+    gateway.index = lambda channel, message: indexed.append((channel, message.id))
+    gateway.request_sync()
+    task = asyncio.create_task(gateway.run())
+
+    async def finished():
+        while gateway.sync_status['state'] in ('queued', 'running'):
+            await asyncio.sleep(.01)
+        assert gateway.sync_status['state'] == 'done'
+
+    try:
+        await asyncio.wait_for(finished(), 8)
+        assert catch_ups == [(1, 10), (2, 305)]
+        assert history_offsets == [206, 106, 6]
+        assert indexed == [(2, 306)] + [(2, i) for i in range(205, 0, -1)]
+        assert store.checkpoint(2) == dict(channel=2, newest=306, oldest=1, complete=1)
+        assert reconciliations == []
+
+        # A new sync session must check both channels for new messages again.
+        gateway.request_sync()
+        await asyncio.wait_for(finished(), 2)
+        assert catch_ups == [(1, 10), (2, 305), (1, 10), (2, 306)]
+        assert history_offsets == [206, 106, 6]
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
         store.db.close()
 
 
