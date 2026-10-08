@@ -34,7 +34,7 @@ configuration:
         description: >-
           Optional TMDB v3 API key. Enables background show matching and Telegram
           sources under public catalog episodes. Review ambiguous matches in the
-          debug dashboard. Leave blank to disable new lookups.
+          Developer UI. Leave blank to disable new lookups.
   ai:
     name: AI search
     description: Configure optional Gemini-powered online title search.
@@ -52,23 +52,23 @@ configuration:
           word (case insensitive: AI, Ai, ai, or aI). Append it when you finish
           typing to prevent unfinished searches from using your API quota.
           Enabled by default. The AI suffix is removed before sending the
-          description. Applies to both the catalogs and debug AI search. Disable
+          description. Applies to both the catalogs and Developer UI AI search. Disable
           to allow AI searches without the suffix.
   debug:
-    name: Debug dashboard
+    name: Developer UI
     description: Configure the dashboard for inspecting indexing and search activity.
     fields:
       DEBUG_ENABLED:
-        name: Enable debug dashboard
+        name: Enable Developer UI
         description: Allow access to the dashboard and its search and sync tools.
       DEBUG_HOST:
-        name: Debug listen address
+        name: Developer UI listen address
         description: Address the dashboard binds to. Use 0.0.0.0 for access through the network.
       SKIP_DEBUG_AUTH:
-        name: Skip debug authentication
+        name: Skip Developer UI authentication
         description: >-
-          Open the debug dashboard without entering the API key. Anyone who can reach
+          Open the Developer UI without entering the API key. Anyone who can reach
           the dashboard can view its data, search the index, and request a sync.
 network:
   8000/tcp: Stremio addon endpoint.
-  8001/tcp: Debug dashboard endpoint.
+  8001/tcp: Developer UI endpoint.

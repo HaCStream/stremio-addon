@@ -10,7 +10,7 @@ A self-hosted addon that connects to your Telegram user account, discovers joine
 
 Since Stremio and Nuvio use the same underlying addon architecture and manifest format, this addon can work for both apps!
 
-**🔎 Searchable catalog · 🔄 Background indexing · 🧰 Debug dashboard · 🐳 Docker · 🏠 Home Assistant**
+**🔎 Searchable catalog · 🔄 Background indexing · 🧰 Developer UI · 🐳 Docker · 🏠 Home Assistant**
 
 ---
 
@@ -22,14 +22,14 @@ Since Stremio and Nuvio use the same underlying addon architecture and manifest 
 - [Prepare your credentials](#-prepare-your-credentials)
 - [Install with Docker Compose](#-install-with-docker-compose)
 - [Install with Home Assistant](#-install-with-home-assistant)
-- [Debug dashboard](#-debug-dashboard)
+- [Developer UI](#-developer-ui)
 
 ## 🛠️ Technologies
 
 | Technology | Role |
 | --- | --- |
 | **Python 3.12** | Application runtime |
-| **FastAPI + Uvicorn** | Stremio API, streaming endpoints, and debug server |
+| **FastAPI + Uvicorn** | Stremio API, streaming endpoints, and Developer UI server |
 | **Telethon** | Telegram user authentication and channel access |
 | **SQLite FTS5** | Persistent index and full-text search |
 | **HTTPX** | Asynchronous HTTP requests |
@@ -44,7 +44,7 @@ Videos stream through your server without transcoding. Playback compatibility de
 
 | Path | Purpose |
 | --- | --- |
-| `stremio_addon/` | Core Stremio application: API, Telegram integration, indexing, streaming, and debug dashboard |
+| `stremio_addon/` | Core Stremio application: API, Telegram integration, indexing, streaming, and Developer UI |
 | `addon/` | Home Assistant package: configuration, startup wrapper, Dockerfile, documentation, and changelog |
 | `addon/config.yaml` | Home Assistant options, supported architecture, image, and version |
 | `tests/` | Automated application and release tests |
@@ -67,14 +67,14 @@ Set these values in `.env` for Docker Compose. In Home Assistant, enter the corr
 | `API_ID` | Positive Telegram application ID. | `true` | — | `123456` |
 | `API_HASH` | Telegram application hash. | `true` | — | `YOUR_TELEGRAM_API_HASH` |
 | `USER_SESSION_STRING` | Complete authorized Telethon StringSession from the session generator. | `true` | — | `YOUR_TELETHON_STRING_SESSION` |
-| `DEBUG_ENABLED` | Enable the separate debug dashboard. | `false` | `true` | `false` |
+| `DEBUG_ENABLED` | Enable the separate Developer UI. | `false` | `true` | `false` |
 | `DEBUG_HOST` | Dashboard bind address. Keep the default for Docker port forwarding. | `false` | `0.0.0.0` | `0.0.0.0` |
-| `SKIP_DEBUG_AUTH` | Open the debug dashboard without an API key; anyone with dashboard access can search and request a sync. | `false` | `false` | `true` |
+| `SKIP_DEBUG_AUTH` | Open the Developer UI without an API key; anyone with dashboard access can search and request a sync. | `false` | `false` | `true` |
 | `CACHE_MB` | Disk chunk-cache limit in MiB; `0` disables new cache writes. | `false` | `512` | `1024` |
 | `CHANNEL_IDS` | Comma-separated negative IDs limiting which joined public and private broadcast channels are indexed. Blank selects all eligible channels. | `false` | Empty | `-1001234567890,-1009876543210` |
 | `AI_SEARCH_ENABLED` | Adds separate **Telegram AI Movies** and **Telegram AI Series** catalogs using online search. | `false` | `false` | `true` |
 | `GEMINI_API_KEY` | Gemini API credential; required only when AI search is enabled. | Conditional | Empty | `YOUR_GEMINI_API_KEY` |
-| `REQUIRE_AI_SUFFIX_FOR_AI_SEARCH` | Require a separate final `AI` word (case insensitive) before calling Gemini, preventing unfinished searches from using API quota while typing. Applies to AI catalogs and debug AI search; the suffix is removed before sending. Set `false` to allow searches without it. | `false` | `true` | `true` |
+| `REQUIRE_AI_SUFFIX_FOR_AI_SEARCH` | Require a separate final `AI` word (case insensitive) before calling Gemini, preventing unfinished searches from using API quota while typing. Applies to AI catalogs and Developer UI AI search; the suffix is removed before sending. Set `false` to allow searches without it. | `false` | `true` | `true` |
 | `TMDB_API_KEY` | Optional TMDB v3 API key. Enables saved show matching and Telegram sources for public catalog episodes. | `false` | Empty | `YOUR_TMDB_V3_API_KEY` |
 | `DATA_DIR` | Persistent index and cache directory. Home Assistant manages this automatically; it is not a UI option. | `false` | `/data` standalone; `/data/stremio` in Home Assistant | `/data` |
 
@@ -84,7 +84,7 @@ Use the variable names shown above. Set all environment variables in uppercase. 
 
 Set `TMDB_API_KEY` to a TMDB **v3 API key** (not the API Read Access Token). In Home Assistant, this option is under **TMDB show matching**. Restart and refresh/reinstall the addon in Nuvio or Stremio so it advertises TMDB stream IDs.
 
-The background matcher checks existing and newly indexed shows every minute. It searches using the extracted message title and filename aliases, comparing Hebrew, English, original and alternative TMDB names. One exact title match is saved automatically; multiple exact matches can be distinguished by an available year. Other results require review in the debug dashboard's **TMDB matching** tab. Choose a candidate or enter a TMDB TV show ID, then save. Manual choices apply to every episode grouped under that Telegram show and are never replaced automatically.
+The background matcher checks existing and newly indexed shows every minute. It searches using the extracted message title and filename aliases, comparing Hebrew, English, original and alternative TMDB names. One exact title match is saved automatically; multiple exact matches can be distinguished by an available year. Other results require review in the Developer UI's **TMDB matching** tab. Choose a candidate or enter a TMDB TV show ID, then save. Manual choices apply to every episode grouped under that Telegram show and are never replaced automatically.
 
 Saved mappings connect a show to its TMDB and, where available, IMDb ID. When another catalog requests `tt1234567:1:2`, `tmdb:42:1:2`, or `tmdb:tv:42:1:2`, the addon returns files for the corresponding season and episode from the currently enabled channels. Playback uses the saved mapping without contacting TMDB. Missing episodes return no source. Telegram's own catalog and IDs remain usable. This does not change which metadata provider the client uses or guarantee that it combines duplicate search cards.
 
@@ -106,15 +106,15 @@ Displayed titles prefer the first non-empty line of the Telegram message caption
 
 Set `AI_SEARCH_ENABLED=true` and provide `GEMINI_API_KEY` to add separate **Telegram AI Movies** and **Telegram AI Series** catalogs. The existing **Telegram Videos** catalog keeps its ordinary text search. Reinstall or refresh the addon in your client after upgrading to discover the new catalogs.
 
-By default, `REQUIRE_AI_SUFFIX_FOR_AI_SEARCH=true`: finish your description with a separate `AI` word when you are ready to search, for example `someone relives the same day AI`. The suffix is case insensitive (`AI`, `Ai`, `ai`, and `aI` all work). Queries without it return no AI results and make no Gemini request, preventing clients such as Nuvio from using API quota on unfinished text during pauses in typing. Trailing whitespace is ignored, and the suffix is removed before sending the description to Gemini; the description retains its original case. This applies to both AI catalogs and the debug AI search form. Set `REQUIRE_AI_SUFFIX_FOR_AI_SEARCH=false` to allow AI searches without the suffix; a supplied suffix is still stripped.
+By default, `REQUIRE_AI_SUFFIX_FOR_AI_SEARCH=true`: finish your description with a separate `AI` word when you are ready to search, for example `someone relives the same day AI`. The suffix is case insensitive (`AI`, `Ai`, `ai`, and `aI` all work). Queries without it return no AI results and make no Gemini request, preventing clients such as Nuvio from using API quota on unfinished text during pauses in typing. Trailing whitespace is ignored, and the suffix is removed before sending the description to Gemini; the description retains its original case. This applies to both AI catalogs and the Developer UI AI search form. Set `REQUIRE_AI_SUFFIX_FOR_AI_SEARCH=false` to allow AI searches without the suffix; a supplied suffix is still stripped.
 
 Gemini uses Google Search to find up to five movie titles and five series titles matching the description. The addon searches those titles in the ordinary Telegram index and returns only normalized title matches in currently selected channels. The movie and series catalogs share one short-lived cached discovery response. Availability is checked locally on every search; category assignments come from Gemini and do not independently classify Telegram files. Results depend on online discovery and title naming, so aliases or translated filenames may not match.
 
 No embeddings, description enrichment, or background AI indexing are generated. Only your search description is sent to Gemini; indexed titles, captions, Telegram credentials, channel IDs, playback URLs, and video bytes are not sent. Google Search grounding may have its own cost and quota in your Gemini project.
 
-The debug page retains an AI search form with separate Movies and Series results. **Cleanup** permanently removes legacy embeddings and AI-generated descriptions, drops their old tables, and reclaims database space. Telegram videos, search entries, checkpoints, mappings, and credentials are preserved. Cleanup also works when AI search is disabled, and can be repeated safely.
+The Developer UI retains an AI search form with separate Movies and Series results. **Cleanup** permanently removes legacy embeddings and AI-generated descriptions, drops their old tables, and reclaims database space. Telegram videos, search entries, checkpoints, mappings, and credentials are preserved. Cleanup also works when AI search is disabled, and can be repeated safely.
 
-If Gemini returns HTTP 429, the addon pauses Gemini requests with a saved, increasing cooldown that survives restarts. The debug search displays failures and cooldown errors. The AI catalogs return no results during failures rather than substituting unrelated text matches; ordinary Telegram search remains available.
+If Gemini returns HTTP 429, the addon pauses Gemini requests with a saved, increasing cooldown that survives restarts. The Developer UI search displays failures and cooldown errors. The AI catalogs return no results during failures rather than substituting unrelated text matches; ordinary Telegram search remains available.
 
 ## 🔑 Prepare your credentials
 
@@ -326,11 +326,11 @@ https://telegram.example.com/YOUR_API_KEY/manifest.json
 
 ### 5. Open the dashboard
 
-With `DEBUG_ENABLED: true`, select **Open Web UI** on the add-on page and sign in with your `API_KEY`. Set `SKIP_DEBUG_AUTH: true` under **Debug dashboard** to open it without signing in. Only enable this when access to the debug listener is appropriately restricted; the setting also permits unauthenticated searches and sync requests. The add-on's `API_KEY` remains required for Stremio endpoints.
+With `DEBUG_ENABLED: true`, select **Open Web UI** on the add-on page and sign in with your `API_KEY`. Set `SKIP_DEBUG_AUTH: true` under **Developer UI** to open it without signing in. Only enable this when access to the Developer UI listener is appropriately restricted; the setting also permits unauthenticated searches and sync requests. The add-on's `API_KEY` remains required for Stremio endpoints.
 
 The button uses the dashboard's mapped host port. You can also open `http://HOME_ASSISTANT_IP:8001` directly, using your chosen host port if you changed the mapping.
 
-## 🧰 Debug dashboard
+## 🧰 Developer UI
 
 The dashboard runs on its own listener and works independently of `ADDON_URL`.
 

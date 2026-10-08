@@ -57,7 +57,7 @@ def main():
             "generate_session.py, then paste only its complete output value into "
             "the add-on's user_session_string option."
         )
-    debug = f" and debug dashboard on {settings.debug_host}:{settings.debug_port}" if settings.debug_enabled else ""
+    debug = f" and Developer UI on {settings.debug_host}:{settings.debug_port}" if settings.debug_enabled else ""
     logging.basicConfig(level=logging.INFO, stream=sys.stdout,
                         format="%(asctime)s %(levelname)s: %(name)s: %(message)s",
                         datefmt="%Y-%m-%dT%H:%M:%S%z")
