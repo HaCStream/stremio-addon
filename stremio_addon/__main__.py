@@ -30,7 +30,8 @@ if __name__ == '__main__':
     # Uvicorn's log_config=None leaves INFO messages without a stdout handler.
     # Supervisor captures stdout/stderr for the add-on Logs tab.
     logging.basicConfig(level=logging.INFO, stream=sys.stdout,
-                        format='%(levelname)s: %(name)s: %(message)s')
+                        format='%(asctime)s %(levelname)s: %(name)s: %(message)s',
+                        datefmt='%Y-%m-%dT%H:%M:%S%z')
     # No request paths or Telegram payloads in application logs.
     logging.getLogger('telethon').setLevel(logging.CRITICAL)
     asyncio.run(serve(settings))
