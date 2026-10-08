@@ -23,7 +23,7 @@ def search_text(row):
     text = normalize(' '.join(str(row.get(k) or '') for k in ('title', 'filename', 'caption')))
     # Make the displayed title searchable even when release filenames split a
     # word with dots/spaces (Ha.Shminia -> hashminia). Keep caption tokens too.
-    aliases = re.split(r'[/|\n]', row.get('title') or '')
+    aliases = title_aliases(row)
     joined = [normalize(alias).replace(' ', '') for alias in aliases]
     return ' '.join([text, *joined])
 
@@ -45,6 +45,39 @@ def series_id(title):
     return 'tg:series:' + hashlib.sha256(normalize(title).encode()).hexdigest()[:24]
 
 
+def title_from_text(text):
+    raw = re.sub(r'\.(mp4|mkv|avi|mov|webm|m4v|ts)$', '', text.strip(), flags=re.I)
+    raw = re.sub(r'[._]+', ' ', raw)
+    title = re.split(EPISODE_PATTERN, raw, maxsplit=1, flags=re.I)[0]
+    title = re.split(r'\b(?:19\d{2}|20\d{2}|2160p|1080p|720p|480p|WEB[ .-]?DL|BluRay)\b', title, maxsplit=1, flags=re.I)[0]
+    # Remove decorative symbols and invisible direction marks at the edges.
+    title = title.strip(' -[]()')
+    while title and not title[0].isalnum():
+        title = title[1:]
+    while title and not title[-1].isalnum():
+        title = title[:-1]
+    return title.strip()
+
+
+def caption_title(caption):
+    line = next((line.strip() for line in caption.splitlines() if line.strip()), '')
+    # Links, channel handles and ID-only captions are metadata, not titles.
+    if re.search(r'https?://|t\.me/|@\w+', line, re.I):
+        return ''
+    title = title_from_text(line)
+    if not any(c.isalpha() for c in title) or re.fullmatch(r'tt\d{7,10}', title, re.I):
+        return ''
+    return title
+
+
+def title_aliases(row):
+    aliases = re.split(r'[/|\n]', row.get('title') or '')
+    filename_title = title_from_text(row.get('filename') or '')
+    if filename_title:
+        aliases.extend(re.split(r'[/|\n]', filename_title))
+    return aliases
+
+
 def parse_title(filename, caption):
     raw = re.sub(r'\.(mp4|mkv|avi|mov|webm|m4v|ts)$', '', filename, flags=re.I) or next(iter(caption.splitlines()), 'Telegram video')
     # Underscores are regex word characters. Normalize filename separators
@@ -56,9 +89,7 @@ def parse_title(filename, caption):
     year = re.search(r'\b(19\d{2}|20\d{2})\b', combined)
     imdb = re.search(r'\btt\d{7,10}\b', combined)
     quality = re.search(r'\b(2160p|1080p|720p|480p|4k)\b', combined, re.I)
-    title = re.split(EPISODE_PATTERN, raw, maxsplit=1, flags=re.I)[0]
-    title = re.split(r'\b(?:19\d{2}|20\d{2}|2160p|1080p|720p|480p|WEB[ .-]?DL|BluRay)\b', title, maxsplit=1, flags=re.I)[0]
-    title = re.sub(r'[._]+', ' ', title).strip(' -[]()') or raw
+    title = caption_title(caption) or title_from_text(raw) or raw
     return dict(title=title, year=int(year[0]) if year else None,
                 season=numbers[0] if ep else None, episode=numbers[1] if ep else None,
                 imdb=imdb[0] if imdb else None, quality=quality[0] if quality else '')
@@ -219,23 +250,22 @@ class Store:
                 self.db.execute('ALTER TABLE videos ADD COLUMN series_id TEXT')
         self.db.execute('CREATE INDEX IF NOT EXISTS videos_series ON videos(series_id,season,episode)')
         self.db.commit()
-        if self.db.execute('PRAGMA user_version').fetchone()[0] < 2:
-            # Reparse episode titles even if series_id already exists: legacy
-            # titles like "hashminia S5E21 480P" otherwise form a separate show.
-            # Repair grouping and FTS together using the saved source text.
+        if self.db.execute('PRAGMA user_version').fetchone()[0] < 3:
+            # Prefer saved captions and rebuild grouping/search without fetching
+            # Telegram history again. Also repair legacy malformed episode titles.
             with self.db:
                 self.db.execute('DELETE FROM search')
                 for saved in self.db.execute('SELECT * FROM videos').fetchall():
                     row = dict(saved)
                     parsed = parse_title(row['filename'] or '', row['caption'] or '')
-                    if parsed['season'] is not None:
+                    if parsed['season'] is not None or caption_title(row['caption'] or ''):
                         row.update(parsed)
                     row['series_id'] = series_id(row['title']) if row['season'] is not None and row['episode'] is not None else None
                     row['search'] = search_text(row)
                     self.db.execute('UPDATE videos SET title=?,year=?,season=?,episode=?,imdb=?,quality=?,series_id=?,search=? WHERE id=?',
                                     [row[k] for k in ('title', 'year', 'season', 'episode', 'imdb', 'quality', 'series_id', 'search', 'id')])
                     self.db.execute('INSERT INTO search VALUES (?,?)', (row['id'], row['search']))
-                self.db.execute('PRAGMA user_version=2')
+                self.db.execute('PRAGMA user_version=3')
 
     def upsert(self, row):
         row = dict(row, series_id=series_id(row['title'])
@@ -303,7 +333,7 @@ class Store:
             'WHERE s.text MATCH ? AND v.channel IN (' + placeholders + ') '
             'ORDER BY v.date DESC,v.id', (expression, *sorted(allowed)))
         return [dict(row) for row in rows
-                if normalize(title) in {normalize(alias) for alias in re.split(r'[/|\n]', row['title'])}]
+                if normalize(title) in {normalize(alias) for alias in title_aliases(dict(row))}]
 
     def cleanup_ai_data(self):
         # Legacy tables are never recreated. Reclaim their pages and clear WAL
@@ -330,4 +360,5 @@ class Store:
     def save_checkpoint(self, p):
         with self.db:
             self.db.execute('INSERT OR REPLACE INTO checkpoints VALUES (:channel,:oldest,:newest,:complete)', p)
+
 

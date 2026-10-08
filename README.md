@@ -85,6 +85,8 @@ Leave `CHANNEL_IDS` empty to discover all joined public and private broadcast ch
 
 Selecting a channel does not join it. Groups and supergroups are excluded. Removing a channel from the selection removes its indexed entries when discovery runs; selecting it again starts a fresh history scan.
 
+Displayed titles prefer the first non-empty line of the Telegram message caption, with episode and release details removed. The filename is used when that line has no usable title (for example, a link or channel handle). Both the caption and filename remain searchable, and filename titles remain available for external metadata and AI title matching. Existing indexed titles are updated automatically on startup from saved captions, without scanning Telegram history again.
+
 ### ✨ AI search
 
 Set `AI_SEARCH_ENABLED=true` and provide `GEMINI_API_KEY` to add separate **Telegram AI Movies** and **Telegram AI Series** catalogs. The existing **Telegram Videos** catalog keeps its ordinary text search. Reinstall or refresh the addon in your client after upgrading to discover the new catalogs.
@@ -348,3 +350,4 @@ The `/healthz` endpoint checks that the HTTP server is running; it does not conf
 
 Find it useful? You support is welcome!
 https://buymeacoffee.com/hacstudio
+

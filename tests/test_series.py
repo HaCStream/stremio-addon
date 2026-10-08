@@ -103,7 +103,7 @@ def test_search_displayed_title_and_hebrew_caption(tmp_path, title):
     runtime = Runtime(cfg, Gateway)
     with TestClient(create_app_with_runtime(runtime)) as client:
         runtime.store.upsert(video(1, title + '.S01E01.mkv', caption='השמיניה עונה 1 פרק 1'))
-        expected = series_id(parse_title(title + '.S01E01.mkv', '')['title'])
+        expected = series_id('השמיניה')
         for query in ('השמיניה', 'hashminia', 'HASHMINIA', 'ha shminia'):
             results = client.get(f'/{cfg.key}/catalog/series/telegram-series/search='
                                  + quote(query, safe='') + '.json').json()['metas']
@@ -133,7 +133,7 @@ def test_search_index_rebuild_repairs_old_caption_only_entries(tmp_path):
     assert store.catalog('hashminia')[0]['id'] == entry['id']
     assert store.catalog('השמיניה')[0]['id'] == entry['id']
     assert store.catalog('another show')[0]['id'] == missing['id']
-    assert store.db.execute('PRAGMA user_version').fetchone()[0] == 2
+    assert store.db.execute('PRAGMA user_version').fetchone()[0] == 3
     store.db.close()
     store = Store(path)
     assert len(store.catalog()) == 2
@@ -166,7 +166,76 @@ def test_existing_index_migration(tmp_path):
 ])
 def test_episode_and_quality_separators(filename):
     parsed = parse_title(filename, 'השמיניה')
-    assert (parsed['title'], parsed['season'], parsed['episode'], parsed['quality']) == ('hashminia', 5, 21, '480P')
+    assert (parsed['title'], parsed['season'], parsed['episode'], parsed['quality']) == ('השמיניה', 5, 21, '480P')
+
+
+@pytest.mark.parametrize('caption', [
+    'השמיניה עונה 1 פרק 1', 'השמיניה',
+    '\n  השמיניה עונה 1 פרק 1\nתיאור נוסף',
+    '🎬 השמיניה עונה 1 פרק 1', '\u200fהשמיניה עונה 1 פרק 1',
+])
+def test_caption_display_title_keeps_filename_metadata(caption):
+    parsed = parse_title('hashminia.s1e01_480p.mp4', caption)
+    assert parsed['title'] == 'השמיניה'
+    assert (parsed['season'], parsed['episode'], parsed['quality']) == (1, 1, '480p')
+
+
+@pytest.mark.parametrize('caption', [
+    '', '   \n', 'https://t.me/channel/1', '@channel', 'tt1234567',
+    'עונה 1 פרק 1', '1080p', '🎬',
+])
+def test_filename_title_fallback(caption):
+    assert parse_title('hashminia.s1e01_480p.mp4', caption)['title'] == 'hashminia'
+
+
+def test_movie_caption_display_title():
+    parsed = parse_title('English.Title.2024.1080p.mp4', 'שם הסרט\nתיאור נוסף')
+    assert parsed['title'] == 'שם הסרט'
+    assert parsed['year'] == 2024 and parsed['quality'] == '1080p'
+    assert parsed['season'] is None and parsed['episode'] is None
+
+
+def test_caption_title_migrates_version_two_without_rescan(tmp_path):
+    path = tmp_path / 'index.sqlite3'
+    store = Store(path)
+    entries = [video(1, 'hashminia.s1e01_480p.mp4', caption='השמיניה עונה 1 פרק 1'),
+               video(2, 'Ha.Shminia.s1e02_480p.mp4', caption='השמיניה')]
+    for entry in entries:
+        entry.update(parse_title(entry['filename'], ''))
+        store.upsert(entry)
+    store.save_checkpoint(dict(channel=-100, oldest=1, newest=2, complete=1))
+    with store.db:
+        store.db.execute('INSERT INTO mappings VALUES (?,?)', (entries[0]['id'], 'tt1234567'))
+        store.db.execute('PRAGMA user_version=2')
+    store.db.close()
+
+    cfg = Settings(8000, 'https://example.com', 'a' * 32, 1, 'hash', 'session', tmp_path)
+    runtime = Runtime(cfg, Gateway)
+    with TestClient(create_app_with_runtime(runtime)) as client:
+        for query in ('השמיניה', 'hashminia', 'ha shminia'):
+            metas = client.get(f'/{cfg.key}/catalog/series/telegram-series/search='
+                               + quote(query, safe='') + '.json').json()['metas']
+            assert len(metas) == 1
+            assert metas[0]['name'] == 'השמיניה'
+            assert [(v['season'], v['episode']) for v in metas[0]['videos']] == [(1, 1), (1, 2)]
+        assert runtime.store.title_matches('hashminia', {-100})
+        assert runtime.store.title_matches('השמיניה', {-100})
+        assert runtime.store.explicit('tt1234567')[0]['id'] == entries[0]['id']
+        assert runtime.store.checkpoint(-100) == dict(channel=-100, oldest=1, newest=2, complete=1)
+
+        async def resolve(kind, imdb):
+            return ['hashminia', 'Ha Shminia'], None
+        runtime.metadata.resolve = resolve
+        meta = client.get(f'/{cfg.key}/meta/series/tt1234567.json').json()['meta']
+        assert len(meta['videos']) == 2
+        assert client.get(f'/{cfg.key}/stream/series/tt1234567:1:2.json').json()['streams']
+
+    # Reopening preserves the migrated titles and creates no duplicate FTS rows.
+    store = Store(path)
+    assert store.db.execute('PRAGMA user_version').fetchone()[0] == 3
+    assert store.db.execute('SELECT count(*) FROM search').fetchone()[0] == 2
+    assert len(store.series(series_id('השמיניה'), {-100})) == 2
+    store.db.close()
 
 
 def test_repair_malformed_titles_in_already_migrated_index(tmp_path):
@@ -195,19 +264,19 @@ def test_repair_malformed_titles_in_already_migrated_index(tmp_path):
             metas = client.get(f'/{cfg.key}/catalog/series/telegram-series/search='
                                + quote(query, safe='') + '.json').json()['metas']
             assert len(metas) == 1
-            assert metas[0]['name'] == 'hashminia'
+            assert metas[0]['name'] == 'השמיניה'
             assert [(v['season'], v['episode']) for v in metas[0]['videos']] == [(5, 14), (5, 21)]
         episode = metas[0]['videos'][1]['id']
         streams = client.get(f'/{cfg.key}/stream/series/{episode}.json').json()['streams']
         assert len(streams) == 1
         assert runtime.tokens.verify(streams[0]['url'].rsplit('/', 1)[-1], 'play') == broken['id']
-        assert runtime.store.get(broken['id'])['title'] == 'hashminia'
+        assert runtime.store.get(broken['id'])['title'] == 'השמיניה'
         assert runtime.store.get(movie['id'])['title'] == movie['title']
         assert runtime.store.explicit('tt1234567')[0]['id'] == broken['id']
         assert runtime.store.checkpoint(-100)['complete'] == 1
-        assert runtime.store.db.execute('PRAGMA user_version').fetchone()[0] == 2
+        assert runtime.store.db.execute('PRAGMA user_version').fetchone()[0] == 3
     store = Store(path)
-    assert len(store.series(series_id('hashminia'), {-100})) == 2
+    assert len(store.series(series_id('השמיניה'), {-100})) == 2
     assert store.db.execute('SELECT count(*) FROM search').fetchone()[0] == 3
     store.db.close()
 
@@ -237,3 +306,4 @@ def test_external_catalog_series_metadata_and_episode_streams(tmp_path):
         assert len(streams) == 1
         assert runtime.tokens.verify(streams[0]['url'].rsplit('/', 1)[-1], 'play') == 'tg:-100:1'
         assert not client.get(base + '/stream/series/tt1234567:2:1.json').json()['streams']
+
