@@ -425,7 +425,7 @@ def test_interaction_logs(tmp_path, caplog):
         secret_query = f'{key} private-session private-hash\nhttps://example.com/play/secret-token'
         client.get(f'/{key}/catalog/movie/telegram/search={quote(secret_query, safe="")}.json')
         def records():
-            return [r.getMessage() for r in caplog.records if r.name == 'uvicorn.error.interactions']
+            return [r.getMessage() for r in caplog.records if r.name == 'stremio_addon.interactions']
         messages = records()
         summaries = [json.loads(m) for m in messages]
         assert summaries[0]['query'] == 'שם'
@@ -458,7 +458,7 @@ def test_interaction_error_summary(tmp_path, caplog):
         app.state.metadata.match = fail
         response = client.get(f'/{key}/stream/movie/tt1234567.json')
         assert response.status_code == 500
-        messages = [r.getMessage() for r in caplog.records if r.name == 'uvicorn.error.interactions']
+        messages = [r.getMessage() for r in caplog.records if r.name == 'stremio_addon.interactions']
         summary = json.loads(messages[-1])
         assert summary['status'] == 500
         assert summary['error'] == 'RuntimeError'
@@ -567,7 +567,7 @@ async def test_manual_sync_lifecycle(tmp_path, caplog, failure):
     import logging
     from telethon import errors
 
-    caplog.set_level(logging.INFO, logger='uvicorn.error.telegram')
+    caplog.set_level(logging.INFO, logger='stremio_addon.telegram')
     store = Store(tmp_path / 'db')
     gateway = Telegram(Settings(8000, 'http://localhost', 'a'*32, 1, 'hash', '', tmp_path), store)
     passes = []

@@ -8,6 +8,12 @@ is prefixed with the date, time, and UTC offset in the runtime's local timezone.
 For example: `2026-10-08T12:28:25+0300 INFO: addon.app: ...`.
 Containers using UTC display `+0000`.
 
+Telegram discovery and sync messages use `stremio_addon.telegram`; request
+summaries use `stremio_addon.interactions`. Uvicorn lifecycle and error messages
+display as `uvicorn.server`, with their severity shown separately as INFO,
+WARNING, or ERROR. When the debug dashboard is enabled, both HTTP listeners
+emit startup and shutdown messages.
+
 Each catalog search/browse, metadata lookup, and source lookup emits one JSON
 summary with its event, query or item ID, HTTP status and duration in milliseconds.
 Successful lookups include the returned result count, distinct channel count,
