@@ -1,5 +1,15 @@
 # Changelog
 
+<!-- release:1.5.5:start -->
+## 1.5.5
+
+## What's Changed
+* Group Telegram shows and fix episode and title searches by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/26
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.5.4...v1.5.5
+<!-- release:1.5.5:end -->
+
 <!-- release:1.5.4:start -->
 ## 1.5.4
 
