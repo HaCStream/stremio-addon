@@ -24,7 +24,7 @@ configuration:
     name: Channel IDs
     description: >-
       Optional comma-separated negative Telegram channel IDs. Leave blank to scan all
-      joined private broadcast channels.
+      joined public and private broadcast channels.
   ai:
     name: AI search
     description: Configure optional Gemini-powered online title search.

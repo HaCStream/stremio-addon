@@ -134,6 +134,49 @@ async def test_channel_filter_and_reselection(tmp_path):
     store.db.close()
 
 
+@pytest.mark.asyncio
+async def test_discover_public_channels_and_membership(tmp_path):
+    from datetime import datetime, timezone
+    from telethon import types, utils
+    store = Store(tmp_path / 'db')
+    cfg = Settings(8000, 'http://localhost', 'a'*32, 1, 'hash', '', tmp_path)
+    gateway = Telegram(cfg, store)
+
+    def channel(id, **kwargs):
+        return types.Channel(id=id, title=str(id), photo=types.ChatPhotoEmpty(),
+                             date=datetime.now(timezone.utc), **kwargs)
+
+    private = channel(123, broadcast=True)
+    public = channel(456, broadcast=True, username='public_channel')
+    public_alias = channel(789, broadcast=True,
+                           usernames=[types.Username(username='public_alias', active=True)])
+    entities = [private]
+
+    class Client:
+        async def iter_dialogs(self):
+            for entity in entities:
+                yield SimpleNamespace(entity=entity)
+
+    gateway.client = Client()
+    await gateway.discover()
+    assert set(gateway.channels) == {utils.get_peer_id(private)}
+
+    # A later discovery (including Sync now) must pick up newly joined channels.
+    entities.extend([public, public_alias,
+                     channel(900, broadcast=True, username='left_channel', left=True),
+                     channel(901, megagroup=True, username='public_group'),
+                     types.Chat(id=902, title='group', photo=types.ChatPhotoEmpty(),
+                                participants_count=1, date=datetime.now(timezone.utc), version=1)])
+    await gateway.discover()
+    assert set(gateway.channels) == {utils.get_peer_id(entity)
+                                     for entity in (private, public, public_alias)}
+
+    gateway.channel_ids = frozenset({utils.get_peer_id(public)})
+    await gateway.discover()
+    assert set(gateway.channels) == {utils.get_peer_id(public)}
+    store.db.close()
+
+
 def test_home_assistant_options_fallback(tmp_path, monkeypatch):
     import stremio_addon.core as core
     options = tmp_path / 'options.json'

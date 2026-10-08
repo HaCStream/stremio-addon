@@ -12,8 +12,8 @@ Before exposing this as your daily source:
 1. Start with an authorized dedicated user session and verify the protected
    status endpoint transitions to indexing/ready and lists expected channels.
 2. Verify a Hebrew caption search, niqqud variation, English title, and mixed
-   title find the intended uploads. Public channels and private groups should
-   not appear.
+   title find the intended uploads. Joined public and private broadcast channels should appear; groups and
+   supergroups should not appear.
 3. Play a small MP4 on your Stremio device, then a multi-gigabyte file. Seek to
    the middle and near the end; pause/resume and stop. Check memory remains
    bounded and the chunk directory stays within the configured cache ceiling.
