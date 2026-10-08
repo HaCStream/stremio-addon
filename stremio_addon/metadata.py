@@ -2,7 +2,7 @@ import asyncio
 import re
 import time
 import httpx
-from .core import normalize
+from .core import normalize, title_aliases
 
 
 class Metadata:
@@ -62,10 +62,11 @@ class Metadata:
                 explicit = mapping['imdb'] if mapping else row['imdb']
                 if explicit and explicit != imdb:
                     continue
-                titles = re.split(r'[/|\n]', row['title'])
+                titles = title_aliases(row)
                 exact = normalize(alias) in {normalize(t) for t in titles}
                 year_ok = kind == 'series' or (year is not None and row['year'] == year)
                 if exact and year_ok and episode_ok(row):
                     found[row['id']] = row
         return list(found.values())
+
 
