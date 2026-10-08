@@ -286,3 +286,70 @@ async def test_startup_and_sync_make_no_ai_calls(tmp_path, monkeypatch):
     runtime.store.upsert(item('tg:-100:3', 'New title'))
     assert not runtime.store.db.execute("SELECT name FROM sqlite_master WHERE name IN ('ai_embeddings','ai_descriptions')").fetchall()
     await runtime.release()
+
+
+@pytest.mark.parametrize('scenario', ['success', 'no_matches', 'http_error', 'rate_limit', 'invalid_json', 'blocked'])
+def test_debug_gemini_exchange(tmp_path, monkeypatch, scenario):
+    import httpx
+    import json
+    import stremio_addon.ai_search as module
+    from stremio_addon.debug import create_debug_app
+    monkeypatch.setattr(module, 'MIN_REQUEST_INTERVAL', 0)
+    cfg = config(tmp_path)
+    runtime = Runtime(cfg, FakeTelegram)
+    calls = []
+    titles = {'movies': ['Groundhog Day' if scenario == 'success' else 'Unavailable'], 'series': []}
+    upstream = {'candidates': [{'content': {'parts': [{'text': json.dumps(titles)}]}}]}
+    status = 200
+    if scenario in ('http_error', 'rate_limit'):
+        status = 400 if scenario == 'http_error' else 429
+        upstream = {'error': {'message': 'Upstream rejected request ' + cfg.gemini_api_key,
+                              'code': status}}
+    elif scenario == 'invalid_json':
+        upstream['candidates'][0]['content']['parts'][0]['text'] = 'not json'
+    elif scenario == 'blocked':
+        upstream = {'promptFeedback': {'blockReason': 'SAFETY'}}
+
+    def respond(request):
+        calls.append(json.loads(request.content))
+        assert request.headers['x-goog-api-key'] == cfg.gemini_api_key
+        return httpx.Response(status, json=upstream)
+
+    with TestClient(create_debug_app(runtime)) as client:
+        original_http = runtime.ai.http
+        runtime.ai.http = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        client.portal.call(original_http.aclose)
+        headers = {'X-Debug-Key': cfg.key}
+        assert client.get('/api/search?mode=ai&q=description+ai').status_code == 401
+        skipped = client.get('/api/search?mode=ai&q=description', headers=headers).json()
+        assert skipped['gemini']['source'] == 'skipped'
+        assert not skipped['gemini']['sent'] and skipped['gemini']['reason']
+        assert not calls
+        response = client.get('/api/search?mode=ai&q=description+ai', headers=headers)
+        assert response.status_code == (200 if scenario in ('success', 'no_matches') else
+                                        429 if scenario == 'rate_limit' else 502)
+        trace = response.json()['gemini']
+        assert trace['model'] == GENERATE_MODEL
+        assert trace['request'] == calls[0]
+        assert trace['source'] == 'live'
+        assert trace['http_status'] == status
+        assert trace['sent']
+        assert cfg.gemini_api_key not in json.dumps(trace)
+        assert cfg.key not in json.dumps(trace)
+        if scenario in ('success', 'no_matches'):
+            assert trace['response'] == upstream
+            assert trace['titles'] == titles
+            assert response.json()['result_count'] == (1 if scenario == 'success' else 0)
+            cached = client.get('/api/search?mode=ai&q=description+AI', headers=headers).json()['gemini']
+            assert cached['source'] == 'cache'
+            assert cached['request'] == trace['request'] and cached['response'] == upstream
+            assert len(calls) == 1
+        elif scenario == 'rate_limit':
+            cooldown = client.get('/api/search?mode=ai&q=another+ai', headers=headers)
+            assert cooldown.status_code == 429
+            assert not cooldown.json()['gemini']['sent']
+            assert 'response' not in cooldown.json()['gemini']
+            assert len(calls) == 1
+        elif scenario in ('invalid_json', 'blocked'):
+            assert trace['response'] == upstream
+            assert trace['error_type'] in ('JSONDecodeError', 'KeyError')
