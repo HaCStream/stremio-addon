@@ -173,5 +173,8 @@ class AISearch:
             # FTS retrieves candidates; normalized title equality prevents a
             # caption mention or similarly named sequel from becoming a result.
             for row in self.store.title_matches(title, allowed):
-                rows.setdefault(row['id'], row)
+                if kind == 'movie' and row['series_id'] is not None:
+                    continue
+                rows.setdefault(row['series_id'] or row['id'], row)
         return list(rows.values())[skip:skip + 100]
+

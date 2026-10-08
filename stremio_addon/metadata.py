@@ -46,15 +46,18 @@ class Metadata:
     async def match(self, store, kind, identifier):
         pattern = r'(tt\d{7,10})(?::(\d+):(\d+))?'
         m = re.fullmatch(pattern, identifier)
-        if not m or (kind == 'series') != bool(m[2]):
+        if not m or (kind != 'series' and m[2]):
             return []
         imdb, season, episode = m[1], int(m[2]) if m[2] else None, int(m[3]) if m[3] else None
         def episode_ok(r):
+            if kind == 'series' and season is None:
+                return r['season'] is not None and r['episode'] is not None
             return (r['season'], r['episode']) == (season, episode)
         found = {r['id']: r for r in store.explicit(imdb) if episode_ok(r)}
         aliases, year = await self.resolve(kind, imdb)
+        allowed = {r['channel'] for r in store.db.execute('SELECT DISTINCT channel FROM videos')}
         for alias in aliases:
-            for row in store.catalog(alias, limit=500):
+            for row in store.title_matches(alias, allowed):
                 mapping = store.db.execute('SELECT imdb FROM mappings WHERE id=?', (row['id'],)).fetchone()
                 explicit = mapping['imdb'] if mapping else row['imdb']
                 if explicit and explicit != imdb:
@@ -64,4 +67,5 @@ class Metadata:
                 year_ok = kind == 'series' or (year is not None and row['year'] == year)
                 if exact and year_ok and episode_ok(row):
                     found[row['id']] = row
-        return list(found.values())[:100]
+        return list(found.values())
+
