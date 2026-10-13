@@ -37,16 +37,55 @@ jobs:
 
   build:
     needs: test
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-26.04
+            machine: x86_64
+          - arch: aarch64
+            platform: linux/arm64
+            runner: ubuntu-26.04-arm
+            machine: aarch64
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
-      - name: Build Docker image without publishing
+      - name: Build release image without publishing
         uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile
-          platforms: linux/amd64
+          platforms: ${{ matrix.platform }}
           push: false
+          load: true
+          tags: stremio-addon:ci
+      - name: Build Home Assistant source image without publishing
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: addon/Dockerfile
+          platforms: ${{ matrix.platform }}
+          push: false
+          load: true
+          tags: stremio-addon:ha-ci
+          build-args: |
+            BUILD_FROM=ghcr.io/home-assistant/${{ matrix.arch }}-base:3.24
+            BUILD_ARCH=${{ matrix.arch }}
+      - name: Check architecture and application imports in both images
+        env:
+          EXPECTED_MACHINE: ${{ matrix.machine }}
+        run: |
+          for image in stremio-addon:ci stremio-addon:ha-ci; do
+            docker run --rm --entrypoint python -e EXPECTED_MACHINE "$image" -c '
+          import os, platform, sqlite3
+          import addon.__main__, addon.healthcheck
+          assert platform.machine() == os.environ["EXPECTED_MACHINE"], platform.machine()
+          with sqlite3.connect(":memory:") as db:
+              db.execute("CREATE VIRTUAL TABLE files USING fts5(title)")
+          print("Application imports and SQLite FTS5 OK on", platform.machine())
+          '
+          done

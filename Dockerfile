@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 ARG BUILD_VERSION=main
-ARG BUILD_ARCH=amd64
+ARG BUILD_ARCH="amd64|aarch64"
 LABEL io.hass.name="Stremio Telegram" \
       io.hass.description="Private Telegram video sources for Stremio" \
       io.hass.type="addon" \

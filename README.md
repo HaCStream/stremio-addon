@@ -269,7 +269,7 @@ docker compose up --build -d
 
 ## 🏠 Install with Home Assistant
 
-**You need:** a Home Assistant installation with the add-on store and an **amd64 / x86-64** host. The current Home Assistant package does not declare ARM support.
+**You need:** a Home Assistant installation with the add-on store and an **amd64 / x86-64** or **aarch64 / ARM64** host (including Raspberry Pi 4/5 running 64-bit Home Assistant OS).
 
 ### 1. Add the custom repository
 
