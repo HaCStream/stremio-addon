@@ -15,6 +15,8 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     APP_VERSION=${BUILD_VERSION} \
     PATH="/opt/venv/bin:${PATH}"
+# Keep disk-backed query sorting inside the AppArmor-permitted temp directory.
+ENV SQLITE_TMPDIR=/tmp
 WORKDIR /app
 RUN apk add --no-cache python3 py3-pip \
     && python3 -m venv /opt/venv

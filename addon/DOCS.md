@@ -154,6 +154,9 @@ and the HA base image's s6 startup. It permits writes to `/data/stremio`, `/run`
 permissions are granted. The profile applies to the Home Assistant add-on;
 standalone Docker Compose keeps Docker's default profile.
 
+Both images set `SQLITE_TMPDIR=/tmp` so large SQLite queries and database cleanup
+can create temporary files in the permitted directory.
+
 CI compiles the profile without loading it into the runner's kernel. Runtime
 verification requires an AppArmor-enabled Home Assistant host: check startup,
 channel sync, playback/cache, Developer UI, enabled metadata/AI features, and
