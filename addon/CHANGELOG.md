@@ -1,5 +1,15 @@
 # Changelog
 
+<!-- release:1.6.2:start -->
+## 1.6.2
+
+## What's Changed
+* Fix Developer UI handling of server and non-JSON errors by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/38
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.6.1...v1.6.2
+<!-- release:1.6.2:end -->
+
 <!-- release:1.6.1:start -->
 ## 1.6.1
 
