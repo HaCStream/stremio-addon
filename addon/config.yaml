@@ -33,9 +33,9 @@ options:
     AI_SEARCH_ENABLED: false
     GEMINI_API_KEY: ""
     REQUIRE_AI_SUFFIX_FOR_AI_SEARCH: true
-  debug:
-    DEBUG_ENABLED: false
-    SKIP_DEBUG_AUTH: false
+  developer_ui:
+    DEV_UI_ENABLED: false
+    SKIP_DEV_UI_AUTH: false
 schema:
   ADDON_URL: url
   ADDON_ACCESS_KEY: password
@@ -50,6 +50,6 @@ schema:
     AI_SEARCH_ENABLED: bool
     GEMINI_API_KEY: password?
     REQUIRE_AI_SUFFIX_FOR_AI_SEARCH: bool
-  debug:
-    DEBUG_ENABLED: bool
-    SKIP_DEBUG_AUTH: bool
+  developer_ui:
+    DEV_UI_ENABLED: bool
+    SKIP_DEV_UI_AUTH: bool

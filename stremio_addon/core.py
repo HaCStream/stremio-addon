@@ -131,7 +131,7 @@ class Settings:
                 'Home Assistant options in /data/options.json must be a JSON object'
             )
 
-        for group_name in ('debug', 'ai', 'tmdb'):
+        for group_name in ('developer_ui', 'ai', 'tmdb'):
             group = options.get(group_name)
             if isinstance(group, dict):
                 options.update(group)
@@ -168,10 +168,10 @@ class Settings:
             channel_ids = frozenset(int(part) for part in parts)
         port = 8000
         debug_port = 8001
-        debug_host = get('DEBUG_HOST', '0.0.0.0')
-        raw_debug_enabled = get('DEBUG_ENABLED', 'true').lower()
+        debug_host = get('DEV_UI_HOST', '0.0.0.0')
+        raw_debug_enabled = get('DEV_UI_ENABLED', 'true').lower()
         if raw_debug_enabled not in ('1', 'true', 'yes', 'on', '0', 'false', 'no', 'off'):
-            raise ValueError('DEBUG_ENABLED must be true or false')
+            raise ValueError('DEV_UI_ENABLED must be true or false')
         debug_enabled = raw_debug_enabled in ('1', 'true', 'yes', 'on')
         def boolean(name, default='false'):
             value = get(name, default).lower()
@@ -180,7 +180,7 @@ class Settings:
             return value in ('1', 'true', 'yes', 'on')
         ai_enabled = boolean('AI_SEARCH_ENABLED')
         ai_suffix = boolean('REQUIRE_AI_SUFFIX_FOR_AI_SEARCH', 'true')
-        skip_debug_auth = boolean('SKIP_DEBUG_AUTH')
+        skip_debug_auth = boolean('SKIP_DEV_UI_AUTH')
         gemini_key = get('GEMINI_API_KEY') if ai_enabled else ''
         if ai_enabled and not gemini_key:
             raise ValueError('GEMINI_API_KEY is required when AI_SEARCH_ENABLED is true')
