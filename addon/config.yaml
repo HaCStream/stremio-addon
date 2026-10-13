@@ -20,9 +20,9 @@ ports:
 timeout: 30
 options:
   ADDON_URL: ""
-  API_KEY: ""
-  API_ID: 0
-  API_HASH: ""
+  ADDON_ACCESS_KEY: ""
+  TELEGRAM_APP_API_ID: 0
+  TELEGRAM_APP_API_HASH: ""
   USER_SESSION_STRING: ""
   CACHE_MB: 512
   CHANNEL_IDS: ""
@@ -34,13 +34,12 @@ options:
     REQUIRE_AI_SUFFIX_FOR_AI_SEARCH: true
   debug:
     DEBUG_ENABLED: false
-    DEBUG_HOST: "0.0.0.0"
     SKIP_DEBUG_AUTH: false
 schema:
   ADDON_URL: url
-  API_KEY: password
-  API_ID: int(1,)
-  API_HASH: password
+  ADDON_ACCESS_KEY: password
+  TELEGRAM_APP_API_ID: int(1,)
+  TELEGRAM_APP_API_HASH: password
   USER_SESSION_STRING: password
   CACHE_MB: int(0,)
   CHANNEL_IDS: str?
@@ -52,5 +51,4 @@ schema:
     REQUIRE_AI_SUFFIX_FOR_AI_SEARCH: bool
   debug:
     DEBUG_ENABLED: bool
-    DEBUG_HOST: str
     SKIP_DEBUG_AUTH: bool

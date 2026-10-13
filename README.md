@@ -63,9 +63,9 @@ Set these values in `.env` for Docker Compose. In Home Assistant, enter the corr
 | Environment variable | Description | Mandatory | Default | Example |
 | --- | --- | :---: | --- | --- |
 | `ADDON_URL` | Base URL reachable by Stremio; use HTTPS for deployment. May include a path prefix, but no credentials, query, or fragment. | `true` | — | `https://telegram.example.com` |
-| `API_KEY` | Access key with at least 32 characters: letters, digits, underscores, or hyphens. Generate a unique value. | `true` | — | Generate with the command below |
-| `API_ID` | Positive Telegram application ID. | `true` | — | `123456` |
-| `API_HASH` | Telegram application hash. | `true` | — | `YOUR_TELEGRAM_API_HASH` |
+| `ADDON_ACCESS_KEY` | Access key with at least 32 characters: letters, digits, underscores, or hyphens. Generate a unique value. | `true` | — | Generate with the command below |
+| `TELEGRAM_APP_API_ID` | Positive Telegram application ID. | `true` | — | `123456` |
+| `TELEGRAM_APP_API_HASH` | Telegram application hash. | `true` | — | `YOUR_TELEGRAM_APP_API_HASH` |
 | `USER_SESSION_STRING` | Complete authorized Telethon StringSession from the session generator. | `true` | — | `YOUR_TELETHON_STRING_SESSION` |
 | `DEBUG_ENABLED` | Enable the separate Developer UI. | `false` | `true` | `false` |
 | `DEBUG_HOST` | Dashboard bind address. Keep the default for Docker port forwarding. | `false` | `0.0.0.0` | `0.0.0.0` |
@@ -156,7 +156,7 @@ Enter your API credentials, phone number, Telegram login code, and two-step veri
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Save the output as `API_KEY`.
+Save the output as `ADDON_ACCESS_KEY`.
 
 > 🔐 Keep the session string, API key, and installation URL private. Use a dedicated session for this addon and run only one instance with that session.
 
@@ -178,9 +178,9 @@ Edit `.env` and replace the placeholders:
 
 ```dotenv
 ADDON_URL=https://telegram.example.com
-API_KEY=REPLACE_WITH_YOUR_GENERATED_ACCESS_KEY
-API_ID=123456
-API_HASH=YOUR_TELEGRAM_API_HASH
+ADDON_ACCESS_KEY=REPLACE_WITH_YOUR_GENERATED_ACCESS_KEY
+TELEGRAM_APP_API_ID=123456
+TELEGRAM_APP_API_HASH=YOUR_TELEGRAM_APP_API_HASH
 USER_SESSION_STRING=YOUR_TELETHON_STRING_SESSION
 
 DEBUG_ENABLED=true
@@ -189,6 +189,10 @@ DEBUG_HOST=0.0.0.0
 CACHE_MB=512
 # CHANNEL_IDS=-1001234567890,-1009876543210
 ```
+
+When upgrading, rename `API_ID` to `TELEGRAM_APP_API_ID`, `API_HASH` to
+`TELEGRAM_APP_API_HASH`, and `API_KEY` to `ADDON_ACCESS_KEY` in your configuration.
+The credential values stay the same.
 
 ### 2. Build and start
 
@@ -199,6 +203,8 @@ services:
   addon:
     build: .
     env_file: .env
+    environment:
+      DEBUG_HOST: ${DEBUG_HOST:-0.0.0.0}
     ports:
       - "127.0.0.1:8000:8000"
       - "127.0.0.1:8001:8001"
@@ -247,7 +253,7 @@ If the proxy runs in another container, connect both services to a shared Docker
 Paste this address into Stremio's addon installation field, replacing the domain and key:
 
 ```text
-https://telegram.example.com/YOUR_API_KEY/manifest.json
+https://telegram.example.com/YOUR_ADDON_ACCESS_KEY/manifest.json
 ```
 
 Initial indexing runs in the background, so results fill in as the scan progresses.
@@ -291,13 +297,12 @@ Example YAML configuration:
 
 ```yaml
 ADDON_URL: "https://telegram.example.com"
-API_KEY: "REPLACE_WITH_YOUR_GENERATED_ACCESS_KEY"
-API_ID: 123456
-API_HASH: "YOUR_TELEGRAM_API_HASH"
+ADDON_ACCESS_KEY: "REPLACE_WITH_YOUR_GENERATED_ACCESS_KEY"
+TELEGRAM_APP_API_ID: 123456
+TELEGRAM_APP_API_HASH: "YOUR_TELEGRAM_APP_API_HASH"
 USER_SESSION_STRING: "YOUR_TELETHON_STRING_SESSION"
 debug:
   DEBUG_ENABLED: true
-  DEBUG_HOST: "0.0.0.0"
   SKIP_DEBUG_AUTH: false
 CACHE_MB: 512
 CHANNEL_IDS: ""
@@ -321,12 +326,12 @@ Use the proxy settings described in the Docker section. The Stremio endpoint mus
 Install the addon in Stremio with:
 
 ```text
-https://telegram.example.com/YOUR_API_KEY/manifest.json
+https://telegram.example.com/YOUR_ADDON_ACCESS_KEY/manifest.json
 ```
 
 ### 5. Open the dashboard
 
-With `DEBUG_ENABLED: true`, select **Open Web UI** on the add-on page and sign in with your `API_KEY`. Set `SKIP_DEBUG_AUTH: true` under **Developer UI** to open it without signing in. Only enable this when access to the Developer UI listener is appropriately restricted; the setting also permits unauthenticated searches and sync requests. The add-on's `API_KEY` remains required for Stremio endpoints.
+With `DEBUG_ENABLED: true`, select **Open Web UI** on the add-on page and sign in with your `ADDON_ACCESS_KEY`. The Developer UI binds to `0.0.0.0` automatically in Home Assistant. Set `SKIP_DEBUG_AUTH: true` under **Developer UI** to open it without signing in. Only enable this when access to the Developer UI listener is appropriately restricted; the setting also permits unauthenticated searches and sync requests. The add-on's `ADDON_ACCESS_KEY` remains required for Stremio endpoints.
 
 The button uses the dashboard's mapped host port. You can also open `http://HOME_ASSISTANT_IP:8001` directly, using your chosen host port if you changed the mapping.
 
@@ -357,7 +362,7 @@ Then open `http://127.0.0.1:8001` locally.
 For connection and indexing details, use the protected endpoint:
 
 ```text
-https://telegram.example.com/YOUR_API_KEY/status
+https://telegram.example.com/YOUR_ADDON_ACCESS_KEY/status
 ```
 
 The `/healthz` endpoint checks that the HTTP server is running; it does not confirm Telegram readiness.

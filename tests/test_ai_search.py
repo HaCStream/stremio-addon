@@ -52,8 +52,8 @@ def test_ai_suffix(text, required, expected):
 def test_ai_settings_from_environment(tmp_path, monkeypatch):
     import stremio_addon.core as core
     monkeypatch.setattr(core.Path, 'is_file', lambda self: False)
-    for key, value in dict(ADDON_URL='https://example.com', API_KEY='a' * 32,
-                           API_ID='1', API_HASH='hash', USER_SESSION_STRING='session',
+    for key, value in dict(ADDON_URL='https://example.com', ADDON_ACCESS_KEY='a' * 32,
+                           TELEGRAM_APP_API_ID='1', TELEGRAM_APP_API_HASH='hash', USER_SESSION_STRING='session',
                            AI_SEARCH_ENABLED='true').items():
         monkeypatch.setenv(key, value)
     monkeypatch.delenv('REQUIRE_AI_SUFFIX_FOR_AI_SEARCH', raising=False)

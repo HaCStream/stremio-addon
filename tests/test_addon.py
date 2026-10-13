@@ -83,8 +83,8 @@ def test_tokens():
 def test_channel_ids_settings(monkeypatch, value, expected):
     import stremio_addon.core as core
     monkeypatch.setattr(core.Path, 'is_file', lambda self: False)
-    for key, setting in dict(ADDON_URL='https://example.com', API_KEY='a'*32,
-                             API_ID='123', API_HASH='hash', USER_SESSION_STRING='session').items():
+    for key, setting in dict(ADDON_URL='https://example.com', ADDON_ACCESS_KEY='a'*32,
+                             TELEGRAM_APP_API_ID='123', TELEGRAM_APP_API_HASH='hash', USER_SESSION_STRING='session').items():
         monkeypatch.setenv(key, setting)
     monkeypatch.delenv('channel_ids', raising=False)
     monkeypatch.delenv('CHANNEL_IDS', raising=False)
@@ -180,9 +180,9 @@ def test_home_assistant_options_fallback(tmp_path, monkeypatch):
     options.write_text('''{
       "PORT": 9123,
       "ADDON_URL": "https://telegram.example.com",
-      "API_KEY": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "API_ID": 12345,
-      "API_HASH": "hash",
+      "ADDON_ACCESS_KEY": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "TELEGRAM_APP_API_ID": 12345,
+      "TELEGRAM_APP_API_HASH": "hash",
       "USER_SESSION_STRING": "session",
       "CACHE_MB": 42,
       "CHANNEL_IDS": "-100123,-100456"
@@ -191,8 +191,8 @@ def test_home_assistant_options_fallback(tmp_path, monkeypatch):
     monkeypatch.setattr(core, 'Path', lambda value: options if value == '/data/options.json' else real_path(value))
     monkeypatch.delenv('CHANNEL_IDS', raising=False)
     monkeypatch.delenv('channel_ids', raising=False)
-    for name in ('PORT', 'ADDON_URL', 'API_KEY', 'API_ID', 'API_HASH', 'USER_SESSION_STRING', 'CACHE_MB',
-                 'port', 'addon_url', 'api_key', 'api_id', 'api_hash', 'user_session_string', 'cache_mb'):
+    for name in ('PORT', 'ADDON_URL', 'ADDON_ACCESS_KEY', 'TELEGRAM_APP_API_ID', 'TELEGRAM_APP_API_HASH', 'USER_SESSION_STRING', 'CACHE_MB',
+                 'port', 'addon_url', 'addon_access_key', 'telegram_app_api_id', 'telegram_app_api_hash', 'user_session_string', 'cache_mb'):
         monkeypatch.delenv(name, raising=False)
     settings = core.Settings.env()
     assert settings.port == 8000
@@ -210,48 +210,52 @@ def test_environment_overrides_home_assistant_options(tmp_path, monkeypatch):
     real_path = core.Path
     monkeypatch.setattr(core, 'Path', lambda value: options if value == '/data/options.json' else real_path(value))
     monkeypatch.setenv('ADDON_URL', 'https://environment.example.com')
-    monkeypatch.setenv('API_KEY', 'a' * 32)
-    monkeypatch.setenv('API_ID', '123')
-    monkeypatch.setenv('API_HASH', 'hash')
+    monkeypatch.setenv('ADDON_ACCESS_KEY', 'a' * 32)
+    monkeypatch.setenv('TELEGRAM_APP_API_ID', '123')
+    monkeypatch.setenv('TELEGRAM_APP_API_HASH', 'hash')
     monkeypatch.setenv('USER_SESSION_STRING', 'session')
-    assert core.Settings.env().url == 'https://environment.example.com'
+    monkeypatch.setenv('DEBUG_HOST', '127.0.0.1')
+    settings = core.Settings.env()
+    assert settings.url == 'https://environment.example.com'
+    assert settings.debug_host == '127.0.0.1'
 
 
 def test_nested_home_assistant_debug_and_ai_options(tmp_path, monkeypatch):
     import stremio_addon.core as core
     options = tmp_path / 'options.json'
     options.write_text(json.dumps({
-        'ADDON_URL': 'https://ha.example.com', 'API_KEY': 'a' * 32,
-        'API_ID': 123, 'API_HASH': 'hash', 'USER_SESSION_STRING': 'session',
+        'ADDON_URL': 'https://ha.example.com', 'ADDON_ACCESS_KEY': 'a' * 32,
+        'TELEGRAM_APP_API_ID': 123, 'TELEGRAM_APP_API_HASH': 'hash', 'USER_SESSION_STRING': 'session',
         'debug': {'DEBUG_ENABLED': False, 'SKIP_DEBUG_AUTH': True},
         'ai': {'AI_SEARCH_ENABLED': True, 'GEMINI_API_KEY': 'secret',
                'REQUIRE_AI_SUFFIX_FOR_AI_SEARCH': False},
     }))
     real_path = core.Path
     monkeypatch.setattr(core, 'Path', lambda value: options if value == '/data/options.json' else real_path(value))
-    for name in ('ADDON_URL', 'API_KEY', 'API_ID', 'API_HASH', 'USER_SESSION_STRING',
-                 'DEBUG_ENABLED', 'DEBUG_PORT', 'SKIP_DEBUG_AUTH', 'AI_SEARCH_ENABLED', 'GEMINI_API_KEY',
+    for name in ('ADDON_URL', 'ADDON_ACCESS_KEY', 'TELEGRAM_APP_API_ID', 'TELEGRAM_APP_API_HASH', 'USER_SESSION_STRING',
+                 'DEBUG_HOST', 'DEBUG_ENABLED', 'DEBUG_PORT', 'SKIP_DEBUG_AUTH', 'AI_SEARCH_ENABLED', 'GEMINI_API_KEY',
                  'REQUIRE_AI_SUFFIX_FOR_AI_SEARCH'):
         monkeypatch.delenv(name, raising=False)
     settings = core.Settings.env()
     assert not settings.debug_enabled
     assert settings.skip_debug_auth
     assert settings.debug_port == 8001
+    assert settings.debug_host == '0.0.0.0'
     assert settings.ai_search_enabled
     assert not settings.require_ai_suffix_for_ai_search
     assert settings.gemini_api_key == 'secret'
 
 
-def test_legacy_home_assistant_options_remain_readable(tmp_path, monkeypatch):
+def test_lowercase_home_assistant_options_remain_readable(tmp_path, monkeypatch):
     import stremio_addon.core as core
     options = tmp_path / 'options.json'
     options.write_text('{"addon_url":"https://legacy.example.com",'
-                       '"api_key":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",'
-                       '"api_id":123,"api_hash":"hash",'
+                       '"addon_access_key":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",'
+                       '"telegram_app_api_id":123,"telegram_app_api_hash":"hash",'
                        '"user_session_string":"session"}')
     real_path = core.Path
     monkeypatch.setattr(core, 'Path', lambda value: options if value == '/data/options.json' else real_path(value))
-    for name in ('ADDON_URL', 'API_KEY', 'API_ID', 'API_HASH', 'USER_SESSION_STRING'):
+    for name in ('ADDON_URL', 'ADDON_ACCESS_KEY', 'TELEGRAM_APP_API_ID', 'TELEGRAM_APP_API_HASH', 'USER_SESSION_STRING'):
         monkeypatch.delenv(name, raising=False)
     assert core.Settings.env().url == 'https://legacy.example.com'
 
@@ -269,7 +273,7 @@ def test_legacy_port_options_and_environment_cannot_change_listeners(monkeypatch
     import stremio_addon.core as core
     monkeypatch.setattr(core.Path, 'is_file', lambda self: False)
     for name, value in dict(PORT='8000', DEBUG_PORT='8000', ADDON_URL='https://example.com',
-                            API_KEY='a' * 32, API_ID='1', API_HASH='hash',
+                            ADDON_ACCESS_KEY='a' * 32, TELEGRAM_APP_API_ID='1', TELEGRAM_APP_API_HASH='hash',
                             USER_SESSION_STRING='session').items():
         monkeypatch.setenv(name, value)
     settings = Settings.env()
