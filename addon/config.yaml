@@ -11,6 +11,7 @@ ingress_port: 8001
 ingress_entry: /
 arch:
   - amd64
+  - aarch64
 startup: application
 boot: auto
 init: false

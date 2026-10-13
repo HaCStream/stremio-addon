@@ -1,41 +1,34 @@
 # Stremio Telegram for Home Assistant
 
-This folder describes an amd64 Home Assistant add-on for the program in the
-repository root. It uses `ghcr.io/home-assistant/amd64-base:3.24` and runs the
-published image `ghcr.io/hacstream/stremio-addon:main`.
-
-Home Assistant appends `version` to `image`, so `config.yaml` intentionally has
-`image: ghcr.io/hacstream/stremio-addon` and `version: main`. Putting `:main` inside
-the image field would cause Home Assistant to append a second tag.
+The add-on supports **amd64 (x86-64)** and **aarch64 (ARM64)** hosts.
+Home Assistant pulls `ghcr.io/hacstream/stremio-addon` using the version in
+`config.yaml` and automatically selects the matching architecture.
 
 ## Build and publish
 
-From the **repository root**, run:
+The release workflow publishes a multi-platform image from the repository-root
+`Dockerfile` for `linux/amd64` and `linux/arm64`. See [RELEASING.md](../RELEASING.md)
+for versioned releases. Adding an architecture to `config.yaml` requires a new
+release containing that architecture before it can be installed.
+
+For a manual HA base-image build, use the **repository root** as the context:
 
 ```sh
-docker build --platform linux/amd64 \
-  --build-arg BUILD_FROM=ghcr.io/home-assistant/amd64-base:3.24 \
-  -f addon/Dockerfile \
-  -t ghcr.io/hacstream/stremio-addon:main .
-docker push ghcr.io/hacstream/stremio-addon:main
+docker build --platform linux/arm64 \
+  --build-arg BUILD_FROM=ghcr.io/home-assistant/aarch64-base:3.24 \
+  --build-arg BUILD_ARCH=aarch64 \
+  -f addon/Dockerfile -t stremio-telegram:local .
 ```
 
-The final dot is important: the Dockerfile copies the existing `addon/`,
-`requirements.txt`, and `generate_session.py` from the repository root.
-Build automation must use `context: .` and
-`file: addon/Dockerfile`. It must build this HA-specific image,
-not the repository's original standalone Dockerfile, for the `main` tag.
-
-Make the GHCR package public so Supervisor can pull it. Publishing is a separate
-step; these files do not upload an image automatically. With a mutable `main`
-tag, future pushes do not produce a new HA version notification; reinstall to
-pull the replacement (back up the add-on first), or adopt versioned tags later.
+For x86-64, use `linux/amd64`, `amd64-base`, and `BUILD_ARCH=amd64`.
+`addon/build.yaml` lists the base images for both architectures. CI verifies
+both this HA-specific Dockerfile and the published repository-root Dockerfile.
 
 ## Install
 
-After pushing these files to the repository and publishing the image, add
+After publishing a release containing both architectures, add
 `https://github.com/HaCStream/stremio-addon` in Home Assistant's add-on store
-repository menu. Install **Stremio Telegram** on an amd64 installation.
+repository menu. Install **Stremio Telegram** on an amd64 or aarch64 installation.
 
 Alternatively, copy this entire folder to `/addons/stremio-telegram` on
 Home Assistant, reload the add-on store, and install the local entry. It still

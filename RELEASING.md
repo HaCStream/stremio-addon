@@ -1,6 +1,6 @@
 # Releasing
 
-The `ci.yml` workflow runs tests and a Docker build without publishing on PRs
+The `ci.yml` workflow runs tests and native amd64/ARM64 Docker builds without publishing on PRs
 targeting `main` and pushes to `main`. The separate `release.yml` workflow runs
 only on `v*` tags. To release, push a new semantic-version tag with a lowercase `v`
 prefix, for example:
@@ -17,6 +17,11 @@ no Docker tar archive is exported or uploaded. Existing release notes are preser
 and notes are generated only when creating a new release. It then updates the top-level
 `version` in `addon/config.yaml` on `main` to `"1.0.4"`. The Docker build version
 label also uses `1.0.4`. No `main` or `latest` Docker tag is published.
+
+Each release tag contains both `linux/amd64` and `linux/arm64` images; Docker and
+Home Assistant select the matching image automatically. CI builds both the release
+image and the HA source image on native runners and checks application imports
+and SQLite FTS5 support. The release workflow uses QEMU for the ARM64 build.
 
 Both Dockerfiles persist `BUILD_VERSION` as the runtime `APP_VERSION` environment
 variable. Stremio's manifest reads that value, so a `v1.0.4` release also reports
