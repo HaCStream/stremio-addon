@@ -1,6 +1,8 @@
 import hmac
+import logging
 import re
 import time
+import traceback
 import unicodedata
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -13,6 +15,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from .ai_search import ai_query, GeminiCooldown, gemini_diagnostics
 from .core import normalize
 from .version import get_version
+
+
+logger = logging.getLogger(__name__)
 
 
 def create_debug_app(runtime):
@@ -38,7 +43,17 @@ def create_debug_app(runtime):
             request.scope['path'] = normalized_path
             request.scope['raw_path'] = normalized_path.encode('utf-8')
 
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception:
+            # Keep credentials and upstream response bodies out of the browser.
+            # Log a redacted traceback without the request query or headers.
+            trace = redact_diagnostics(traceback.format_exc())
+            trace = re.sub(r'https?://\S+', '[url]', trace)
+            logger.error('Developer UI request failed: %s %s\n%s',
+                         request.method, normalized_path, trace)
+            response = JSONResponse(status_code=500, content={
+                'detail': 'Internal server error; check the add-on logs for details.'})
         response.headers['Cache-Control'] = 'private, no-store'
         response.headers['Referrer-Policy'] = 'no-referrer'
         response.headers['X-Content-Type-Options'] = 'nosniff'
