@@ -377,6 +377,33 @@ def test_skip_debug_auth_only_applies_to_debug_dashboard(tmp_path):
         assert client.get(f'/{key}/manifest.json').status_code == 200
 
 
+def test_debug_server_error_is_json_and_logs_redacted_traceback(tmp_path, caplog):
+    cfg = Settings(8000, 'https://example.com', 'a' * 32, 1, 'hash',
+                   'private-session', tmp_path, skip_debug_auth=True,
+                   gemini_api_key='private-gemini-key', tmdb_api_key='private-tmdb-key')
+    app = create_debug_app(Runtime(cfg, FakeTelegram))
+    with TestClient(app) as client:
+        def fail():
+            raise RuntimeError(f'{cfg.key} {cfg.session} {cfg.api_hash} '
+                               f'{cfg.gemini_api_key} {cfg.tmdb_api_key} '
+                               'https://secret.example/token')
+        app.state.runtime.tg.client.is_connected = fail
+        response = client.get('/api/overview?secret=private-query')
+        assert response.status_code == 500
+        assert response.json() == {
+            'detail': 'Internal server error; check the add-on logs for details.'}
+        assert response.headers['cache-control'] == 'private, no-store'
+        assert response.headers['x-content-type-options'] == 'nosniff'
+        assert 'Developer UI request failed: GET /api/overview' in caplog.text
+        assert 'RuntimeError' in caplog.text
+        assert '[redacted]' in caplog.text
+        for secret in (cfg.key, cfg.session, cfg.api_hash, cfg.gemini_api_key,
+                       cfg.tmdb_api_key, 'secret.example', 'private-query'):
+            assert secret not in caplog.text
+            assert secret not in response.text
+        assert client.get('/api/channels').status_code == 200
+
+
 def test_http(tmp_path):
     key = 'a' * 32
     cfg = Settings(8000, 'https://example.com', key, 1, 'hash', 'session', tmp_path)

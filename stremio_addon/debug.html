@@ -37,7 +37,22 @@ let apiKey=sessionStorage.getItem('debugKey')||'';
 let aiSearchStarted=false;
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ingressUrl=path=>new URL(path.replace(/^\/+/,''),window.location.href).toString();
-async function api(path,options={}){const r=await fetch(ingressUrl(path),{...options,headers:{...(options.headers||{}),'X-Debug-Key':apiKey}});if(r.status===401)throw new Error('Invalid API key');const data=await r.json();if(!r.ok){const error=new Error(data.detail||'Request failed');error.data=data;throw error}return data}
+async function api(path,options={}){
+  const r=await fetch(ingressUrl(path),{...options,headers:{...(options.headers||{}),'X-Debug-Key':apiKey}});
+  if(r.status===401)throw new Error('Invalid API key');
+  const body=await r.text();
+  let data;
+  try{data=JSON.parse(body)}catch{
+    const message=r.ok?'Invalid JSON response':r.status>=500?'Server error; check the add-on logs for details':'Request failed';
+    throw new Error(`${message} (HTTP ${r.status}, ${path.split('?')[0]})`);
+  }
+  if(!r.ok){
+    const error=new Error(`${typeof data?.detail==='string'?data.detail:'Request failed'} (HTTP ${r.status}, ${path.split('?')[0]})`);
+    error.data=data;
+    throw error;
+  }
+  return data;
+}
 function fmtBytes(n){if(!n)return '0 B';const u=['B','KB','MB','GB','TB'],i=Math.min(Math.floor(Math.log(n)/Math.log(1024)),4);return (n/1024**i).toFixed(i>2?2:0)+' '+u[i]}
 async function load(){const [o,c,a]=await Promise.all([api('/api/overview'),api('/api/channels'),api('/api/activity')]);document.querySelector('#login').classList.add('hidden');document.querySelector('#app').classList.remove('hidden');document.querySelector('#connection').innerHTML=`<span class="${o.connected?'ok':'bad'}">${o.connected?'Connected':'Disconnected'}</span> · ${esc(o.phase)} · v${esc(o.version)}`;document.querySelector('#cards').innerHTML=[['Videos',o.videos],['Channels',o.channels],['Index state',o.phase],['Uptime',Math.floor(o.uptime_seconds/60)+' min']].map(x=>`<div class="card"><span class="muted">${esc(x[0])}</span><div class="value">${esc(x[1])}</div></div>`).join('');document.querySelector('#config').textContent=`Addon port ${o.addon_port} · Developer UI port ${o.debug_port} · Cache ${o.cache_mb} MB${o.last_error?' · Last error: '+o.last_error:''}${o.ai_search_enabled?' · AI search enabled'+(o.require_ai_suffix_for_ai_search?' (AI suffix required)':''):''}`;const enabled=o.ai_search_enabled;document.querySelector('#ai-query').disabled=!enabled;document.querySelector('#ai-search-button').disabled=!enabled;document.querySelector('#ai-status').textContent=enabled?(o.require_ai_suffix_for_ai_search?'Finish your description with a separate AI word (case insensitive) to start AI search.':'Enter a description to search movies and series.'):'AI features are not enabled.';if(!aiSearchStarted)document.querySelector('#ai-results').textContent=enabled?'Run an AI search to inspect matching Telegram titles.':'AI features are not enabled.';renderChannels(c.channels);renderActivity(a.events)}
 function renderChannels(rows){document.querySelector('#channel-rows').innerHTML=rows.map(x=>`<tr><td dir="auto">${esc(x.name)}</td><td>${x.id}</td><td>${x.videos}</td><td>${x.newest_message||'—'}</td><td>${x.oldest_message||'—'}</td><td class="${x.complete?'ok':'muted'}">${x.complete?'Complete':'Indexing'}</td></tr>`).join('')||'<tr><td colspan="6">No private channels discovered.</td></tr>'}
@@ -75,6 +90,6 @@ document.querySelector('#tmdb-refresh').onclick=loadTMDB;
 document.querySelector('#tmdb-search').onsubmit=async e=>{e.preventDefault();if(!tmdbSelected)return;const button=e.submitter;button.disabled=true;tmdbStatus('Searching TMDB…');try{const d=await api('/api/tmdb/candidates?'+new URLSearchParams({series_id:tmdbSelected.series_id,q:document.querySelector('#tmdb-query').value}));renderTMDBCandidates(d.candidates);tmdbStatus('Review candidates and save the correct match.')}catch(err){tmdbStatus(err.message)}finally{button.disabled=false}};
 document.querySelector('#tmdb-save').onsubmit=async e=>{e.preventDefault();if(!tmdbSelected)return;const button=e.submitter;button.disabled=true;try{await api('/api/tmdb/mapping',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({series_id:tmdbSelected.series_id,tmdb:Number(document.querySelector('#tmdb-id').value),season_offset:Number(document.querySelector('#tmdb-season').value),episode_offset:Number(document.querySelector('#tmdb-episode').value)})});await loadTMDB();tmdbStatus('Mapping saved for all episodes of this show.')}catch(err){tmdbStatus(err.message)}finally{button.disabled=false}};
 document.querySelector('#tmdb-block').onclick=async()=>{if(!tmdbSelected)return;try{await api('/api/tmdb/mapping?'+new URLSearchParams({series_id:tmdbSelected.series_id}),{method:'DELETE'});await loadTMDB();tmdbStatus('Matching disabled for this show. Save a mapping to enable it again.')}catch(err){tmdbStatus(err.message)}};
-async function start(){try{const r=await fetch(ingressUrl('/api/auth-config'));if(!r.ok)throw new Error('Unable to load dashboard settings');const config=await r.json();if(config.skip_debug_auth){sessionStorage.removeItem('debugKey');apiKey='';await load();return}if(apiKey)await load()}catch(err){sessionStorage.removeItem('debugKey');apiKey='';document.querySelector('#login-error').textContent=err.message}}
+async function start(){try{const config=await api('/api/auth-config');if(config.skip_debug_auth){sessionStorage.removeItem('debugKey');apiKey='';await load();return}if(apiKey)await load()}catch(err){sessionStorage.removeItem('debugKey');apiKey='';document.querySelector('#login-error').textContent=err.message}}
 start();
 </script></body></html>
