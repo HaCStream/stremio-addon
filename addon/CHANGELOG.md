@@ -1,5 +1,16 @@
 # Changelog
 
+<!-- release:1.6.0:start -->
+## 1.6.0
+
+## What's Changed
+* Rename Telegram app credentials and addon access key by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/33
+* Add AppArmor profile for the Home Assistant add-on by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/34
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.5.9...v1.6.0
+<!-- release:1.6.0:end -->
+
 <!-- release:1.5.9:start -->
 ## 1.5.9
 
