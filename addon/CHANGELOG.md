@@ -1,5 +1,15 @@
 # Changelog
 
+<!-- release:1.6.3:start -->
+## 1.6.3
+
+## What's Changed
+* Fix SQLite temporary file failures under Home Assistant AppArmor by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/39
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.6.2...v1.6.3
+<!-- release:1.6.3:end -->
+
 <!-- release:1.6.2:start -->
 ## 1.6.2
 
