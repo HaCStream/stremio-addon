@@ -8,6 +8,8 @@ LABEL io.hass.name="Stremio Telegram" \
       io.hass.arch="${BUILD_ARCH}" \
       org.opencontainers.image.source="https://github.com/HaCStream/stremio-addon"
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+# SQLite otherwise prefers /var/tmp, which the HA AppArmor profile cannot write.
+ENV SQLITE_TMPDIR=/tmp
 ENV APP_VERSION=${BUILD_VERSION}
 WORKDIR /app
 COPY requirements.txt .
