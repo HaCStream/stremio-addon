@@ -1,5 +1,17 @@
 # Changelog
 
+<!-- release:1.6.1:start -->
+## 1.6.1
+
+## What's Changed
+* Rename Developer UI environment and Home Assistant options by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/35
+* Improve Home Assistant add-on README by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/36
+* Add ARM64 support for Home Assistant and Docker by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/37
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.6.0...v1.6.1
+<!-- release:1.6.1:end -->
+
 <!-- release:1.6.0:start -->
 ## 1.6.0
 
