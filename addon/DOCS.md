@@ -150,6 +150,26 @@ to trigger channel discovery and catch-up indexing immediately.
 SQLite and video chunks persist under `/data/stremio`; Supervisor keeps options
 separately in `/data/options.json`. Restart the add-on after changing options.
 
+## AppArmor
+
+Home Assistant loads `apparmor.txt` beside `config.yaml` automatically on hosts
+with AppArmor support. The profile runs in enforcing mode, allows the Telegram,
+metadata, AI, and HTTP connections, and supports both the published Python image
+and the HA base image's s6 startup. It permits writes to `/data/stremio`, `/run`,
+`/tmp`, and s6's configuration directory; application code and
+`/data/options.json` remain read-only. No mount or host administration
+permissions are granted. The profile applies to the Home Assistant add-on;
+standalone Docker Compose keeps Docker's default profile.
+
+CI compiles the profile without loading it into the runner's kernel. Runtime
+verification requires an AppArmor-enabled Home Assistant host: check startup,
+channel sync, playback/cache, Developer UI, enabled metadata/AI features, and
+shutdown. Review host audit logs for denials with
+`journalctl _TRANSPORT=audit -g 'apparmor="DENIED"'`. When diagnosing new image
+requirements, temporarily add `complain` to the profile flags on a test host,
+exercise those features, and review `apparmor="ALLOWED"` audit entries. Remove
+`complain` before deploying the updated profile.
+
 The published image must run as root inside Home Assistant so it can read the
 Supervisor-owned `/data/options.json` and write the add-on data directory. The
 repository's root Dockerfile therefore does not set `USER addon`.

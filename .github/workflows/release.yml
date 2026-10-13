@@ -26,6 +26,11 @@ jobs:
             requirements-dev.txt
       - name: Install test dependencies
         run: python -m pip install -r requirements-dev.txt
+      - name: Validate AppArmor profile syntax
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y apparmor
+          apparmor_parser --skip-kernel-load --skip-cache addon/apparmor.txt
       - name: Run tests
         run: python -m pytest -q
 

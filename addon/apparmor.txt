@@ -1,0 +1,61 @@
+#include <tunables/global>
+
+# Supervisor prefixes this name with the repository identifier when loading it.
+profile stremio_telegram flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  # DNS, Telegram, HTTPS metadata/AI requests, and the two HTTP listeners.
+  network inet stream,
+  network inet6 stream,
+  network inet dgram,
+  network inet6 dgram,
+  network unix stream,
+  network unix dgram,
+
+  # s6 initialization and shutdown; no mount or host administration privileges.
+  capability chown,
+  capability dac_override,
+  capability fowner,
+  capability setuid,
+  capability setgid,
+  capability kill,
+  signal (send, receive),
+
+  # Container files are readable, but only the locations below are writable.
+  # This also covers certificates, DNS, timezone data, and Python imports.
+  /** r,
+  /lib/** m,
+  /usr/lib/** m,
+  /usr/local/lib/** m,
+  /opt/venv/** m,
+
+  # HA base-image s6 entrypoint and helpers. All execution inherits this profile.
+  /init ix,
+  /bin/** ix,
+  /sbin/** ix,
+  /usr/bin/** ix,
+  /usr/sbin/** ix,
+  /usr/local/bin/python{,3,3.*} ix,
+  /opt/venv/bin/python{,3,3.*} ix,
+  /package/** ix,
+  /command/** ix,
+  /usr/lib/bashio/** ix,
+  /etc/cont-init.d/** ix,
+  /etc/cont-finish.d/** ix,
+  /etc/services.d/** ix,
+  /etc/s6-overlay/** rwix,
+  /run/ rw,
+  /run/** rwk,
+  /run/{s6,s6-rc*,service}/** ix,
+  /tmp/ rw,
+  /tmp/** rwk,
+  /dev/{tty,console} rw,
+  /dev/std{in,out,err} rw,
+  /proc/*/fd/[012] rw,
+
+  # Supervisor owns options.json. Only application data may be changed.
+  /data/ r,
+  /data/options.json r,
+  /data/stremio/ rw,
+  /data/stremio/** rwk,
+}
