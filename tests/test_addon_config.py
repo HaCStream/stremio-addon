@@ -23,7 +23,7 @@ def test_nested_options_and_translations_cover_schema():
     config = yaml.safe_load(Path("addon/config.yaml").read_text(encoding="utf-8"))
     translation = yaml.safe_load(Path("addon/translations/en.yaml").read_text(encoding="utf-8"))
     assert set(translation["configuration"]) == set(config["schema"])
-    for group in ("debug", "ai", "tmdb"):
+    for group in ("developer_ui", "ai", "tmdb"):
         assert set(translation["configuration"][group]["fields"]) == set(config["schema"][group])
     assert set(translation["network"]) == set(config["ports"])
 
@@ -31,15 +31,15 @@ def test_nested_options_and_translations_cover_schema():
 def test_nested_options_reach_application_environment():
     env = {}
     configure({"ADDON_ACCESS_KEY": "a" * 32, "TELEGRAM_APP_API_ID": 123,
-               "TELEGRAM_APP_API_HASH": "hash", "debug": {"DEBUG_ENABLED": False, "SKIP_DEBUG_AUTH": True},
+               "TELEGRAM_APP_API_HASH": "hash", "developer_ui": {"DEV_UI_ENABLED": False, "SKIP_DEV_UI_AUTH": True},
                "ai": {"AI_SEARCH_ENABLED": True, "GEMINI_API_KEY": "secret",
                       "REQUIRE_AI_SUFFIX_FOR_AI_SEARCH": False}}, env)
     assert env["ADDON_ACCESS_KEY"] == "a" * 32
     assert env["TELEGRAM_APP_API_ID"] == "123"
     assert env["TELEGRAM_APP_API_HASH"] == "hash"
-    assert "DEBUG_HOST" not in env
-    assert env["DEBUG_ENABLED"] == "False"
-    assert env["SKIP_DEBUG_AUTH"] == "True"
+    assert "DEV_UI_HOST" not in env
+    assert env["DEV_UI_ENABLED"] == "False"
+    assert env["SKIP_DEV_UI_AUTH"] == "True"
     assert env["AI_SEARCH_ENABLED"] == "True"
     assert env["GEMINI_API_KEY"] == "secret"
     assert env["REQUIRE_AI_SUFFIX_FOR_AI_SEARCH"] == "False"

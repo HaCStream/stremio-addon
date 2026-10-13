@@ -67,9 +67,9 @@ Set these values in `.env` for Docker Compose. In Home Assistant, enter the corr
 | `TELEGRAM_APP_API_ID` | Positive Telegram application ID. | `true` | — | `123456` |
 | `TELEGRAM_APP_API_HASH` | Telegram application hash. | `true` | — | `YOUR_TELEGRAM_APP_API_HASH` |
 | `USER_SESSION_STRING` | Complete authorized Telethon StringSession from the session generator. | `true` | — | `YOUR_TELETHON_STRING_SESSION` |
-| `DEBUG_ENABLED` | Enable the separate Developer UI. | `false` | `true` | `false` |
-| `DEBUG_HOST` | Dashboard bind address. Keep the default for Docker port forwarding. | `false` | `0.0.0.0` | `0.0.0.0` |
-| `SKIP_DEBUG_AUTH` | Open the Developer UI without an API key; anyone with dashboard access can search and request a sync. | `false` | `false` | `true` |
+| `DEV_UI_ENABLED` | Enable the separate Developer UI. | `false` | `true` | `false` |
+| `DEV_UI_HOST` | Dashboard bind address. Keep the default for Docker port forwarding. | `false` | `0.0.0.0` | `0.0.0.0` |
+| `SKIP_DEV_UI_AUTH` | Open the Developer UI without an API key; anyone with dashboard access can search and request a sync. | `false` | `false` | `true` |
 | `CACHE_MB` | Disk chunk-cache limit in MiB; `0` disables new cache writes. | `false` | `512` | `1024` |
 | `CHANNEL_IDS` | Comma-separated negative IDs limiting which joined public and private broadcast channels are indexed. Blank selects all eligible channels. | `false` | Empty | `-1001234567890,-1009876543210` |
 | `AI_SEARCH_ENABLED` | Adds separate **Telegram AI Movies** and **Telegram AI Series** catalogs using online search. | `false` | `false` | `true` |
@@ -183,9 +183,9 @@ TELEGRAM_APP_API_ID=123456
 TELEGRAM_APP_API_HASH=YOUR_TELEGRAM_APP_API_HASH
 USER_SESSION_STRING=YOUR_TELETHON_STRING_SESSION
 
-DEBUG_ENABLED=true
-DEBUG_HOST=0.0.0.0
-# SKIP_DEBUG_AUTH=false
+DEV_UI_ENABLED=true
+DEV_UI_HOST=0.0.0.0
+# SKIP_DEV_UI_AUTH=false
 CACHE_MB=512
 # CHANNEL_IDS=-1001234567890,-1009876543210
 ```
@@ -204,7 +204,7 @@ services:
     build: .
     env_file: .env
     environment:
-      DEBUG_HOST: ${DEBUG_HOST:-0.0.0.0}
+      DEV_UI_HOST: ${DEV_UI_HOST:-0.0.0.0}
     ports:
       - "127.0.0.1:8000:8000"
       - "127.0.0.1:8001:8001"
@@ -301,9 +301,9 @@ ADDON_ACCESS_KEY: "REPLACE_WITH_YOUR_GENERATED_ACCESS_KEY"
 TELEGRAM_APP_API_ID: 123456
 TELEGRAM_APP_API_HASH: "YOUR_TELEGRAM_APP_API_HASH"
 USER_SESSION_STRING: "YOUR_TELETHON_STRING_SESSION"
-debug:
-  DEBUG_ENABLED: true
-  SKIP_DEBUG_AUTH: false
+developer_ui:
+  DEV_UI_ENABLED: true
+  SKIP_DEV_UI_AUTH: false
 CACHE_MB: 512
 CHANNEL_IDS: ""
 ```
@@ -331,7 +331,7 @@ https://telegram.example.com/YOUR_ADDON_ACCESS_KEY/manifest.json
 
 ### 5. Open the dashboard
 
-With `DEBUG_ENABLED: true`, select **Open Web UI** on the add-on page and sign in with your `ADDON_ACCESS_KEY`. The Developer UI binds to `0.0.0.0` automatically in Home Assistant. Set `SKIP_DEBUG_AUTH: true` under **Developer UI** to open it without signing in. Only enable this when access to the Developer UI listener is appropriately restricted; the setting also permits unauthenticated searches and sync requests. The add-on's `ADDON_ACCESS_KEY` remains required for Stremio endpoints.
+With `DEV_UI_ENABLED: true`, select **Open Web UI** on the add-on page and sign in with your `ADDON_ACCESS_KEY`. The Developer UI binds to `0.0.0.0` automatically in Home Assistant. Set `SKIP_DEV_UI_AUTH: true` under **Developer UI** to open it without signing in. Only enable this when access to the Developer UI listener is appropriately restricted; the setting also permits unauthenticated searches and sync requests. The add-on's `ADDON_ACCESS_KEY` remains required for Stremio endpoints.
 
 The button uses the dashboard's mapped host port. You can also open `http://HOME_ASSISTANT_IP:8001` directly, using your chosen host port if you changed the mapping.
 

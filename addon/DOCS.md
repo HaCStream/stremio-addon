@@ -49,8 +49,8 @@ Set these options in the add-on's Configuration tab:
 | Option / environment variable | Value |
 | --- | --- |
 | `ADDON_URL` | External HTTPS base URL of your reverse proxy |
-| `DEBUG_ENABLED` | Enable the read-only Developer UI (default `true`) |
-| `SKIP_DEBUG_AUTH` | Open the dashboard without a key (default `false`); anyone with access can search and request a sync |
+| `DEV_UI_ENABLED` | Enable the read-only Developer UI (default `true`) |
+| `SKIP_DEV_UI_AUTH` | Open the dashboard without a key (default `false`); anyone with access can search and request a sync |
 | `ADDON_ACCESS_KEY` | At least 32 random URL-safe characters |
 | `TELEGRAM_APP_API_ID` | Positive Telegram application ID |
 | `TELEGRAM_APP_API_HASH` | Telegram application hash |
@@ -140,7 +140,7 @@ The Developer UI is available through the host port mapped to 8001. Sign in with
 configured API key to inspect channels, indexing progress, recent searches, and
 read-only search results. It does not expose playback URLs and does not use
 `ADDON_URL` for its own requests.
-Set `SKIP_DEBUG_AUTH: true` under the Developer UI options to open without a key. Keep
+Set `SKIP_DEV_UI_AUTH: true` under the Developer UI options to open without a key. Keep
 dashboard network access restricted when using this option. The Stremio API key
 is still required for addon endpoints.
 The add-on page's **Open Web UI** button opens the dashboard on its standard

@@ -54,14 +54,14 @@ configuration:
           Enabled by default. The AI suffix is removed before sending the
           description. Applies to both the catalogs and Developer UI AI search. Disable
           to allow AI searches without the suffix.
-  debug:
+  developer_ui:
     name: Developer UI
     description: Configure the dashboard for inspecting indexing and search activity.
     fields:
-      DEBUG_ENABLED:
+      DEV_UI_ENABLED:
         name: Enable Developer UI
         description: Allow access to the dashboard and its search and sync tools.
-      SKIP_DEBUG_AUTH:
+      SKIP_DEV_UI_AUTH:
         name: Skip Developer UI authentication
         description: >-
           Open the Developer UI without entering the addon access key. Anyone who can reach

@@ -214,7 +214,7 @@ def test_environment_overrides_home_assistant_options(tmp_path, monkeypatch):
     monkeypatch.setenv('TELEGRAM_APP_API_ID', '123')
     monkeypatch.setenv('TELEGRAM_APP_API_HASH', 'hash')
     monkeypatch.setenv('USER_SESSION_STRING', 'session')
-    monkeypatch.setenv('DEBUG_HOST', '127.0.0.1')
+    monkeypatch.setenv('DEV_UI_HOST', '127.0.0.1')
     settings = core.Settings.env()
     assert settings.url == 'https://environment.example.com'
     assert settings.debug_host == '127.0.0.1'
@@ -226,14 +226,14 @@ def test_nested_home_assistant_debug_and_ai_options(tmp_path, monkeypatch):
     options.write_text(json.dumps({
         'ADDON_URL': 'https://ha.example.com', 'ADDON_ACCESS_KEY': 'a' * 32,
         'TELEGRAM_APP_API_ID': 123, 'TELEGRAM_APP_API_HASH': 'hash', 'USER_SESSION_STRING': 'session',
-        'debug': {'DEBUG_ENABLED': False, 'SKIP_DEBUG_AUTH': True},
+        'developer_ui': {'DEV_UI_ENABLED': False, 'SKIP_DEV_UI_AUTH': True},
         'ai': {'AI_SEARCH_ENABLED': True, 'GEMINI_API_KEY': 'secret',
                'REQUIRE_AI_SUFFIX_FOR_AI_SEARCH': False},
     }))
     real_path = core.Path
     monkeypatch.setattr(core, 'Path', lambda value: options if value == '/data/options.json' else real_path(value))
     for name in ('ADDON_URL', 'ADDON_ACCESS_KEY', 'TELEGRAM_APP_API_ID', 'TELEGRAM_APP_API_HASH', 'USER_SESSION_STRING',
-                 'DEBUG_HOST', 'DEBUG_ENABLED', 'DEBUG_PORT', 'SKIP_DEBUG_AUTH', 'AI_SEARCH_ENABLED', 'GEMINI_API_KEY',
+                 'DEV_UI_HOST', 'DEV_UI_ENABLED', 'DEBUG_PORT', 'SKIP_DEV_UI_AUTH', 'AI_SEARCH_ENABLED', 'GEMINI_API_KEY',
                  'REQUIRE_AI_SUFFIX_FOR_AI_SEARCH'):
         monkeypatch.delenv(name, raising=False)
     settings = core.Settings.env()
