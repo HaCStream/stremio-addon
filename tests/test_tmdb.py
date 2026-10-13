@@ -218,8 +218,8 @@ def test_tmdb_key_environment_and_home_assistant_options(tmp_path, monkeypatch):
     from pathlib import Path
     import stremio_addon.core as core
     from addon.start import configure
-    values = {'ADDON_URL': 'https://example.com', 'API_KEY': 'a' * 32,
-              'API_ID': 1, 'API_HASH': 'hash', 'USER_SESSION_STRING': 'session',
+    values = {'ADDON_URL': 'https://example.com', 'ADDON_ACCESS_KEY': 'a' * 32,
+              'TELEGRAM_APP_API_ID': 1, 'TELEGRAM_APP_API_HASH': 'hash', 'USER_SESSION_STRING': 'session',
               'tmdb': {'TMDB_API_KEY': 'option-key'}}
     options = tmp_path / 'options.json'
     import json

@@ -50,11 +50,10 @@ Set these options in the add-on's Configuration tab:
 | --- | --- |
 | `ADDON_URL` | External HTTPS base URL of your reverse proxy |
 | `DEBUG_ENABLED` | Enable the read-only Developer UI (default `true`) |
-| `DEBUG_HOST` | Dashboard listen address (default `0.0.0.0`) |
 | `SKIP_DEBUG_AUTH` | Open the dashboard without a key (default `false`); anyone with access can search and request a sync |
-| `API_KEY` | At least 32 random URL-safe characters |
-| `API_ID` | Positive Telegram application ID |
-| `API_HASH` | Telegram application hash |
+| `ADDON_ACCESS_KEY` | At least 32 random URL-safe characters |
+| `TELEGRAM_APP_API_ID` | Positive Telegram application ID |
+| `TELEGRAM_APP_API_HASH` | Telegram application hash |
 | `USER_SESSION_STRING` | Complete Telethon StringSession |
 | `CACHE_MB` | Optional cache limit in MiB, default `512` |
 | `CHANNEL_IDS` | Optional comma-separated negative channel IDs; blank scans all joined public and private channels |
@@ -86,7 +85,7 @@ mapped host port). Forward byte-range requests and disable proxy caching and
 access logs that expose credential-bearing URLs. Install in Stremio with:
 
 ```text
-https://YOUR_DOMAIN/YOUR_API_KEY/manifest.json
+https://YOUR_DOMAIN/YOUR_ADDON_ACCESS_KEY/manifest.json
 ```
 
 The protected `/<your-api-key>/status` endpoint shows Telegram indexing progress.

@@ -4,15 +4,15 @@ configuration:
     description: >-
       Public HTTP or HTTPS base URL used for addon links. Include the scheme and domain,
       without a trailing slash or API key.
-  API_KEY:
-    name: Addon API key
+  ADDON_ACCESS_KEY:
+    name: Addon access key
     description: >-
       Secret with at least 32 URL-safe characters used to protect addon and dashboard requests.
-  API_ID:
-    name: Telegram API ID
+  TELEGRAM_APP_API_ID:
+    name: Telegram app API ID
     description: Numeric application ID obtained from Telegram.
-  API_HASH:
-    name: Telegram API hash
+  TELEGRAM_APP_API_HASH:
+    name: Telegram app API hash
     description: Secret application hash paired with the Telegram API ID.
   USER_SESSION_STRING:
     name: Telegram session string
@@ -61,13 +61,10 @@ configuration:
       DEBUG_ENABLED:
         name: Enable Developer UI
         description: Allow access to the dashboard and its search and sync tools.
-      DEBUG_HOST:
-        name: Developer UI listen address
-        description: Address the dashboard binds to. Use 0.0.0.0 for access through the network.
       SKIP_DEBUG_AUTH:
         name: Skip Developer UI authentication
         description: >-
-          Open the Developer UI without entering the API key. Anyone who can reach
+          Open the Developer UI without entering the addon access key. Anyone who can reach
           the dashboard can view its data, search the index, and request a sync.
 network:
   8000/tcp: Stremio addon endpoint.

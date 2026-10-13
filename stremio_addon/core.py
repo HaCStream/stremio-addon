@@ -151,9 +151,9 @@ class Settings:
         parsed = urlparse(url)
         if parsed.scheme not in ('http', 'https') or not parsed.netloc or parsed.query or parsed.fragment or parsed.username:
             raise ValueError('ADDON_URL must be an HTTP(S) base URL without credentials, query or fragment')
-        key = get('API_KEY')
+        key = get('ADDON_ACCESS_KEY')
         if not re.fullmatch(r'[A-Za-z0-9_-]{32,}', key):
-            raise ValueError('API_KEY needs at least 32 URL-safe letters, digits, underscores or hyphens')
+            raise ValueError('ADDON_ACCESS_KEY needs at least 32 URL-safe letters, digits, underscores or hyphens')
         default_data = '/data/stremio' if options_path.is_file() else '/data'
         raw_ids = os.getenv('CHANNEL_IDS')
         if raw_ids is None:
@@ -184,7 +184,7 @@ class Settings:
         gemini_key = get('GEMINI_API_KEY') if ai_enabled else ''
         if ai_enabled and not gemini_key:
             raise ValueError('GEMINI_API_KEY is required when AI_SEARCH_ENABLED is true')
-        return cls(port, url, key, int(get('API_ID')), get('API_HASH'), get('USER_SESSION_STRING'),
+        return cls(port, url, key, int(get('TELEGRAM_APP_API_ID')), get('TELEGRAM_APP_API_HASH'), get('USER_SESSION_STRING'),
                    Path(get('DATA_DIR', default_data)), int(get('CACHE_MB', '512')) * 1024**2,
                    channel_ids, debug_port, debug_host, debug_enabled, ai_enabled, gemini_key,
                    skip_debug_auth, ai_suffix,
