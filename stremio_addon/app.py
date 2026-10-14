@@ -145,9 +145,9 @@ def create_app_with_runtime(runtime):
     @app.get('/{key}/manifest.json')
     async def manifest(key):
         auth(key)
-        catalogs = [{'type': 'movie', 'id': 'telegram', 'name': 'Telegram Videos', 'extra': [{'name': 'search', 'isRequired': False}, {'name': 'skip', 'isRequired': False}]}]
+        catalogs = [{'type': 'movie', 'id': 'telegram', 'name': 'Telegram Videos', 'extra': [{'name': 'search', 'isRequired': not app.state.cfg.display_collection}, {'name': 'skip', 'isRequired': False}]}]
         catalogs.append({'type': 'series', 'id': 'telegram-series', 'name': 'Telegram Series',
-                         'extra': [{'name': 'search', 'isRequired': False}, {'name': 'skip', 'isRequired': False}]})
+                         'extra': [{'name': 'search', 'isRequired': not app.state.cfg.display_collection}, {'name': 'skip', 'isRequired': False}]})
         if app.state.cfg.ai_search_enabled:
             for kind, name in (('movie', 'Movies'), ('series', 'Series')):
                 catalogs.append({'type': kind, 'id': 'telegram-ai-' + kind,

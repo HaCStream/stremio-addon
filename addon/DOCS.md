@@ -48,6 +48,7 @@ Set these options in the add-on's Configuration tab:
 | `TELEGRAM_APP_API_ID` | Positive Telegram application ID |
 | `TELEGRAM_APP_API_HASH` | Telegram application hash |
 | `USER_SESSION_STRING` | Complete Telethon StringSession |
+| `DISPLAY_COLLECTION` | Show Telegram collections on the main screen (default `false`); search remains available. Restart and refresh/reinstall the addon in your client after changing it |
 | `CACHE_MB` | Optional cache limit in MiB, default `512` |
 | `CHANNEL_IDS` | Optional comma-separated negative channel IDs; blank scans all joined public and private channels |
 

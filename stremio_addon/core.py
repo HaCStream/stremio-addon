@@ -114,6 +114,7 @@ class Settings:
     skip_debug_auth: bool = False
     require_ai_suffix_for_ai_search: bool = True
     tmdb_api_key: str = ''
+    display_collection: bool = False
 
     @classmethod
     def env(cls):
@@ -188,7 +189,8 @@ class Settings:
                    Path(get('DATA_DIR', default_data)), int(get('CACHE_MB', '512')) * 1024**2,
                    channel_ids, debug_port, debug_host, debug_enabled, ai_enabled, gemini_key,
                    skip_debug_auth, ai_suffix,
-                   str(os.getenv('TMDB_API_KEY') or options.get('TMDB_API_KEY') or '').strip())
+                   str(os.getenv('TMDB_API_KEY') or options.get('TMDB_API_KEY') or '').strip(),
+                   display_collection=boolean('DISPLAY_COLLECTION'))
 
 
 class Tokens:

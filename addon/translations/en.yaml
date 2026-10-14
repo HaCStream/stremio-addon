@@ -25,6 +25,12 @@ configuration:
     description: >-
       Optional comma-separated negative Telegram channel IDs. Leave blank to scan all
       joined public and private broadcast channels.
+  DISPLAY_COLLECTION:
+    name: Display collection
+    description: >-
+      Show Telegram Videos and Telegram Series collections on the main screen in
+      Stremio/Nuvio. Disabled by default; search remains available. Restart the
+      add-on and refresh or reinstall it in your client after changing this option.
   tmdb:
     name: TMDB show matching
     description: Match Telegram shows to public catalog episode identities.
