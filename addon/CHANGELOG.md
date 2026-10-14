@@ -1,5 +1,15 @@
 # Changelog
 
+<!-- release:1.6.4:start -->
+## 1.6.4
+
+## What's Changed
+* Add DISPLAY_COLLECTION toggle for main-screen collections by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/40
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.6.3...v1.6.4
+<!-- release:1.6.4:end -->
+
 <!-- release:1.6.3:start -->
 ## 1.6.3
 
