@@ -226,6 +226,7 @@ def test_nested_home_assistant_debug_and_ai_options(tmp_path, monkeypatch):
     options.write_text(json.dumps({
         'ADDON_URL': 'https://ha.example.com', 'ADDON_ACCESS_KEY': 'a' * 32,
         'TELEGRAM_APP_API_ID': 123, 'TELEGRAM_APP_API_HASH': 'hash', 'USER_SESSION_STRING': 'session',
+        'DISPLAY_COLLECTION': True,
         'developer_ui': {'DEV_UI_ENABLED': False, 'SKIP_DEV_UI_AUTH': True},
         'ai': {'AI_SEARCH_ENABLED': True, 'GEMINI_API_KEY': 'secret',
                'REQUIRE_AI_SUFFIX_FOR_AI_SEARCH': False},
@@ -234,7 +235,7 @@ def test_nested_home_assistant_debug_and_ai_options(tmp_path, monkeypatch):
     monkeypatch.setattr(core, 'Path', lambda value: options if value == '/data/options.json' else real_path(value))
     for name in ('ADDON_URL', 'ADDON_ACCESS_KEY', 'TELEGRAM_APP_API_ID', 'TELEGRAM_APP_API_HASH', 'USER_SESSION_STRING',
                  'DEV_UI_HOST', 'DEV_UI_ENABLED', 'DEBUG_PORT', 'SKIP_DEV_UI_AUTH', 'AI_SEARCH_ENABLED', 'GEMINI_API_KEY',
-                 'REQUIRE_AI_SUFFIX_FOR_AI_SEARCH'):
+                 'REQUIRE_AI_SUFFIX_FOR_AI_SEARCH', 'DISPLAY_COLLECTION'):
         monkeypatch.delenv(name, raising=False)
     settings = core.Settings.env()
     assert not settings.debug_enabled
@@ -244,6 +245,7 @@ def test_nested_home_assistant_debug_and_ai_options(tmp_path, monkeypatch):
     assert settings.ai_search_enabled
     assert not settings.require_ai_suffix_for_ai_search
     assert settings.gemini_api_key == 'secret'
+    assert settings.display_collection
 
 
 def test_lowercase_home_assistant_options_remain_readable(tmp_path, monkeypatch):
@@ -795,3 +797,40 @@ async def test_sync_requested_during_background_scan_waits_for_discovery(tmp_pat
             await task
         assert gateway.sync_status['state'] == 'failed'
         store.db.close()
+
+
+@pytest.mark.parametrize('display_collection', [False, True])
+def test_collection_visibility_preserves_search(tmp_path, display_collection):
+    cfg = Settings(8000, 'https://example.com', 'a' * 32, 1, 'hash', 'session', tmp_path,
+                   display_collection=display_collection, ai_search_enabled=True,
+                   gemini_api_key='test')
+    with TestClient(create_app(cfg, FakeTelegram)) as client:
+        catalogs = client.get(f'/{cfg.key}/manifest.json').json()['catalogs']
+        assert [c['id'] for c in catalogs] == [
+            'telegram', 'telegram-series', 'telegram-ai-movie', 'telegram-ai-series']
+        assert [c['extra'][0]['isRequired'] for c in catalogs] == [
+            not display_collection, not display_collection, True, True]
+        assert len(client.get(
+            f'/{cfg.key}/catalog/movie/telegram/search={quote("שם")}.json'
+        ).json()['metas']) == 1
+
+
+@pytest.mark.parametrize('value,expected', [(None, False), ('false', False), ('true', True),
+                                          ('TRUE', True), ('invalid', None)])
+def test_display_collection_environment(tmp_path, monkeypatch, value, expected):
+    import stremio_addon.core as core
+    options = tmp_path / 'options.json'
+    real_path = core.Path
+    monkeypatch.setattr(core, 'Path', lambda name: options if name == '/data/options.json' else real_path(name))
+    for name, setting in {'ADDON_URL': 'https://example.com', 'ADDON_ACCESS_KEY': 'a' * 32,
+                          'TELEGRAM_APP_API_ID': '1', 'TELEGRAM_APP_API_HASH': 'hash',
+                          'USER_SESSION_STRING': 'session', 'AI_SEARCH_ENABLED': 'false'}.items():
+        monkeypatch.setenv(name, setting)
+    monkeypatch.delenv('DISPLAY_COLLECTION', raising=False)
+    if value is not None:
+        monkeypatch.setenv('DISPLAY_COLLECTION', value)
+    if expected is None:
+        with pytest.raises(ValueError, match='DISPLAY_COLLECTION must be true or false'):
+            core.Settings.env()
+    else:
+        assert core.Settings.env().display_collection is expected

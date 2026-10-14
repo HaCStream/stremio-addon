@@ -31,7 +31,7 @@ def test_nested_options_and_translations_cover_schema():
 def test_nested_options_reach_application_environment():
     env = {}
     configure({"ADDON_ACCESS_KEY": "a" * 32, "TELEGRAM_APP_API_ID": 123,
-               "TELEGRAM_APP_API_HASH": "hash", "developer_ui": {"DEV_UI_ENABLED": False, "SKIP_DEV_UI_AUTH": True},
+               "TELEGRAM_APP_API_HASH": "hash", "DISPLAY_COLLECTION": True, "developer_ui": {"DEV_UI_ENABLED": False, "SKIP_DEV_UI_AUTH": True},
                "ai": {"AI_SEARCH_ENABLED": True, "GEMINI_API_KEY": "secret",
                       "REQUIRE_AI_SUFFIX_FOR_AI_SEARCH": False}}, env)
     assert env["ADDON_ACCESS_KEY"] == "a" * 32
@@ -40,6 +40,7 @@ def test_nested_options_reach_application_environment():
     assert "DEV_UI_HOST" not in env
     assert env["DEV_UI_ENABLED"] == "False"
     assert env["SKIP_DEV_UI_AUTH"] == "True"
+    assert env["DISPLAY_COLLECTION"] == "True"
     assert env["AI_SEARCH_ENABLED"] == "True"
     assert env["GEMINI_API_KEY"] == "secret"
     assert env["REQUIRE_AI_SUFFIX_FOR_AI_SEARCH"] == "False"
