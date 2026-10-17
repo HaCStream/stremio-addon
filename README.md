@@ -6,7 +6,7 @@
 
 **Your Telegram videos, available in Stremio / Nuvio.**
 
-A self-hosted addon that connects to your Telegram user account, discovers joined public and private broadcast channels, and indexes uploaded videos for browsing, searching, and streaming through your server.
+A self-hosted addon that connects to your Telegram user account, discovers joined public and private channels and groups, and indexes uploaded videos for browsing, searching, and streaming through your server.
 
 Since Stremio and Nuvio use the same underlying addon architecture and manifest format, this addon can work for both apps!
 
@@ -71,7 +71,7 @@ Set these values in `.env` for Docker Compose. In Home Assistant, enter the corr
 | `DEV_UI_HOST` | Dashboard bind address. Keep the default for Docker port forwarding. | `false` | `0.0.0.0` | `0.0.0.0` |
 | `SKIP_DEV_UI_AUTH` | Open the Developer UI without an API key; anyone with dashboard access can search and request a sync. | `false` | `false` | `true` |
 | `CACHE_MB` | Disk chunk-cache limit in MiB; `0` disables new cache writes. | `false` | `512` | `1024` |
-| `CHANNEL_IDS` | Comma-separated negative IDs limiting which joined public and private broadcast channels are indexed. Blank selects all eligible channels. | `false` | Empty | `-1001234567890,-1009876543210` |
+| `CHANNEL_IDS` | Comma-separated negative channel or group IDs limiting which joined public and private channels and groups are indexed. Blank selects all eligible channels and groups. | `false` | Empty | `-1001234567890,-1009876543210` |
 | `DISPLAY_COLLECTION` | Show Telegram Videos and Telegram Series collections on the main screen in Stremio/Nuvio. Search remains available when disabled. Restart and refresh/reinstall the addon in your client after changing it. | `false` | `false` | `true` |
 | `AI_SEARCH_ENABLED` | Adds separate **Telegram AI Movies** and **Telegram AI Series** catalogs using online search. | `false` | `false` | `true` |
 | `GEMINI_API_KEY` | Gemini API credential; required only when AI search is enabled. | Conditional | Empty | `YOUR_GEMINI_API_KEY` |
@@ -95,11 +95,11 @@ The review tab supports season and episode offsets: **Telegram number = catalog 
 
 Only extracted title aliases (or your manually entered search title) are sent to TMDB; full captions, channel identities and media are not sent. This product uses the TMDB API but is not endorsed or certified by TMDB.
 
-### 🎯 Selecting channels
+### 🎯 Selecting channels and groups
 
-Leave `CHANNEL_IDS` empty to discover all joined public and private broadcast channels, including archived dialogs. To limit indexing, copy the full negative channel IDs from the protected status endpoint into `CHANNEL_IDS`, then restart.
+Leave `CHANNEL_IDS` empty to discover all joined public and private channels and groups, including regular groups, supergroups, and archived dialogs. To limit indexing, copy the full negative channel or group IDs from the protected status endpoint into `CHANNEL_IDS`, then restart.
 
-Selecting a channel does not join it. Groups and supergroups are excluded. Removing a channel from the selection removes its indexed entries when discovery runs; selecting it again starts a fresh history scan.
+Selecting a channel or group does not join it. Direct messages, left groups, and migrated group placeholders are excluded. Removing a source from the selection removes its indexed entries when discovery runs; selecting it again starts a fresh history scan.
 
 Displayed titles prefer the first non-empty line of the Telegram message caption, with episode and release details removed. The filename is used when that line has no usable title (for example, a link or channel handle). Both the caption and filename remain searchable, and filename titles remain available for external metadata and AI title matching. Existing indexed titles are updated automatically on startup from saved captions, without scanning Telegram history again.
 
@@ -354,10 +354,10 @@ ssh -L 8001:127.0.0.1:8001 user@YOUR_DOCKER_HOST
 Then open `http://127.0.0.1:8001` locally.
 
 - **🔌 Connection:** inspect Telegram connection and indexing state.
-- **📋 Channels:** see which channels are included in queries.
+- **📋 Channels:** see which channels and groups are included in queries.
 - **🔎 Search:** inspect matching results and diagnostic details without playback.
 - **👁️ Credentials:** reveal or hide the API key while entering it.
-- **🔄 Sync now:** trigger channel discovery and catch-up indexing after joining a channel or adding a video. The button stays disabled with **Syncing...** until discovery and indexing finish, then shows **Sync done!**. Failures appear in the dashboard, and sync progress is logged.
+- **🔄 Sync now:** trigger channel discovery and catch-up indexing after joining a channel or group or adding a video. The button stays disabled with **Syncing...** until discovery and indexing finish, then shows **Sync done!**. Failures appear in the dashboard, and sync progress is logged.
 - **📝 Activity:** review recent addon activity.
 
 For connection and indexing details, use the protected endpoint:

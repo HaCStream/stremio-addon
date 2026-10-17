@@ -83,7 +83,12 @@ class Telegram:
         channels = {}
         async for dialog in self.client.iter_dialogs():
             entity = dialog.entity
-            if isinstance(entity, types.Channel) and entity.broadcast and not entity.left:
+            is_channel = (isinstance(entity, types.Channel)
+                          and (entity.broadcast or entity.megagroup or entity.gigagroup)
+                          and not entity.left)
+            is_group = (isinstance(entity, types.Chat) and not entity.left
+                        and not entity.deactivated and not entity.migrated_to)
+            if is_channel or is_group:
                 channel_id = utils.get_peer_id(entity)
                 if self.channel_ids is None or channel_id in self.channel_ids:
                     channels[channel_id] = entity

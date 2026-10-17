@@ -50,12 +50,13 @@ Set these options in the add-on's Configuration tab:
 | `USER_SESSION_STRING` | Complete Telethon StringSession |
 | `DISPLAY_COLLECTION` | Show Telegram collections on the main screen (default `false`); search remains available. Restart and refresh/reinstall the addon in your client after changing it |
 | `CACHE_MB` | Optional cache limit in MiB, default `512` |
-| `CHANNEL_IDS` | Optional comma-separated negative channel IDs; blank scans all joined public and private channels |
+| `CHANNEL_IDS` | Optional comma-separated negative channel or group IDs; blank scans all joined public and private channels and groups |
 
 For example, set `CHANNEL_IDS: "-1001234567890,-1009876543210"` and restart
-the add-on. Only those joined public and private broadcast channels will be indexed.
+the add-on. Only those joined public and private channels and groups will be indexed.
 Existing catalog entries from excluded channels are removed on discovery;
 selecting them again restarts their history scan. Telegram posts are unchanged.
+Regular groups use negative IDs (for example, `-123456789`); supergroups and channels use `-100…` IDs. The `CHANNEL_IDS` option accepts both.
 
 The settings use their exact uppercase names. The application
 reads them directly from Home Assistant's `/data/options.json`; the HA startup
@@ -138,7 +139,7 @@ Set `SKIP_DEV_UI_AUTH: true` under the Developer UI options to open without a ke
 dashboard network access restricted when using this option. The Stremio API key
 is still required for addon endpoints.
 The add-on page's **Open Web UI** button opens the dashboard on its standard
-port by default. Use **Sync now** in the dashboard after joining a channel or adding a video
+port by default. Use **Sync now** in the dashboard after joining a channel or group or adding a video
 to trigger channel discovery and catch-up indexing immediately.
 
 SQLite and video chunks persist under `/data/stremio`; Supervisor keeps options
