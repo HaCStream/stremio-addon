@@ -1,6 +1,6 @@
 # 📺 Stremio Telegram
 
-Watch videos from Telegram channels you have joined in **Stremio or Nuvio**, using your Home Assistant server. The add-on indexes joined public and private broadcast channels, groups series by episode, and streams files without transcoding.
+Watch videos from Telegram channels and groups you have joined in **Stremio or Nuvio**, using your Home Assistant server. The add-on indexes joined public and private channels and groups, groups series by episode, and streams files without transcoding.
 
 ## 🚀 Get started
 
@@ -19,7 +19,7 @@ Watch videos from Telegram channels you have joined in **Stremio or Nuvio**, usi
 
 | Option | What it does |
 | --- | --- |
-| `CHANNEL_IDS` | Leave empty to index all joined broadcast channels, or enter comma-separated channel IDs to limit the selection. |
+| `CHANNEL_IDS` | Leave empty to index all joined channels and groups, or enter comma-separated channel or group IDs to limit the selection. |
 | `CACHE_MB` | Sets the video chunk cache limit in MiB (default: `512`). |
 | **TMDB show matching** → `TMDB_API_KEY` | Matches Telegram series to public catalog episodes; review uncertain matches in the Developer UI. |
 | **AI search** → `AI_SEARCH_ENABLED`, `GEMINI_API_KEY` | Adds AI movie and series search. By default, end the search with `AI` to send it to Gemini. |

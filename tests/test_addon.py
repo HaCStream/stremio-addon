@@ -132,7 +132,7 @@ async def test_channel_filter_and_reselection(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_discover_public_channels_and_membership(tmp_path):
+async def test_discover_channels_groups_and_membership(tmp_path):
     from datetime import datetime, timezone
     from telethon import types, utils
     store = Store(tmp_path / 'db')
@@ -147,6 +147,14 @@ async def test_discover_public_channels_and_membership(tmp_path):
     public = channel(456, broadcast=True, username='public_channel')
     public_alias = channel(789, broadcast=True,
                            usernames=[types.Username(username='public_alias', active=True)])
+    supergroup = channel(901, megagroup=True, username='public_group')
+    private_supergroup = channel(903, megagroup=True)
+    gigagroup = channel(904, gigagroup=True)
+    def group(id, **kwargs):
+        return types.Chat(id=id, title=str(id), photo=types.ChatPhotoEmpty(),
+                          participants_count=1, date=datetime.now(timezone.utc),
+                          version=1, **kwargs)
+    basic_group = group(902)
     entities = [private]
 
     class Client:
@@ -161,16 +169,61 @@ async def test_discover_public_channels_and_membership(tmp_path):
     # A later discovery (including Sync now) must pick up newly joined channels.
     entities.extend([public, public_alias,
                      channel(900, broadcast=True, username='left_channel', left=True),
-                     channel(901, megagroup=True, username='public_group'),
-                     types.Chat(id=902, title='group', photo=types.ChatPhotoEmpty(),
-                                participants_count=1, date=datetime.now(timezone.utc), version=1)])
+                     supergroup, private_supergroup, gigagroup, basic_group,
+                     channel(905, megagroup=True, left=True),
+                     group(906, left=True), group(907, deactivated=True),
+                     group(908, migrated_to=types.InputChannel(901, 1)),
+                     types.User(id=909),
+                     types.ChatForbidden(id=910, title='forbidden'),
+                     types.ChannelForbidden(id=911, access_hash=1, title='forbidden')])
     await gateway.discover()
     assert set(gateway.channels) == {utils.get_peer_id(entity)
-                                     for entity in (private, public, public_alias)}
+                                     for entity in (private, public, public_alias, supergroup,
+                                                    private_supergroup, gigagroup, basic_group)}
 
-    gateway.channel_ids = frozenset({utils.get_peer_id(public)})
+    gateway.channel_ids = frozenset({utils.get_peer_id(public), utils.get_peer_id(basic_group)})
     await gateway.discover()
-    assert set(gateway.channels) == {utils.get_peer_id(public)}
+    assert set(gateway.channels) == {utils.get_peer_id(public), utils.get_peer_id(basic_group)}
+    store.db.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('supergroup', [False, True])
+async def test_group_scan_updates_and_playback_lookup(tmp_path, supergroup):
+    from datetime import datetime, timezone
+    from telethon import types, utils
+    now = datetime.now(timezone.utc)
+    entity = (types.Channel(id=123, title='Group', photo=types.ChatPhotoEmpty(),
+                            date=now, megagroup=True) if supergroup else
+              types.Chat(id=123, title='Group', photo=types.ChatPhotoEmpty(),
+                         participants_count=2, date=now, version=1))
+    peer_id = utils.get_peer_id(entity)
+    message = SimpleNamespace(id=7, date=now, message='Group movie',
+                              file=SimpleNamespace(name='movie.mp4'),
+                              document=SimpleNamespace(id=99, size=10,
+                                                       mime_type='video/mp4', attributes=[]))
+    class Client:
+        async def iter_dialogs(self):
+            yield SimpleNamespace(entity=entity)
+        async def get_messages(self, target, **kwargs):
+            assert target is entity
+            return message if 'ids' in kwargs else [message]
+    store = Store(tmp_path / 'db')
+    cfg = Settings(8000, 'http://localhost', 'a'*32, 1, 'hash', '', tmp_path)
+    gateway = Telegram(cfg, store)
+    gateway.client = Client()
+    await gateway.discover()
+    await gateway.scan(peer_id, entity)
+    entry = store.catalog()[0]
+    assert entry['id'] == f'tg:{peer_id}:7'
+    assert entry['channel_name'] == 'Group'
+    assert store.checkpoint(peer_id)['complete'] == 1
+    assert await gateway.message(entry) is message
+    message.message = 'Updated movie'
+    await gateway.update(SimpleNamespace(chat_id=peer_id, message=message))
+    assert store.catalog('Updated')[0]['caption'] == 'Updated movie'
+    await gateway.deleted(SimpleNamespace(chat_id=peer_id, deleted_ids=[7]))
+    assert not store.catalog()
     store.db.close()
 
 
