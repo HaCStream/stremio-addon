@@ -1,5 +1,15 @@
 # Changelog
 
+<!-- release:1.6.5:start -->
+## 1.6.5
+
+## What's Changed
+* Include Telegram groups in video scanning by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/41
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.6.4...v1.6.5
+<!-- release:1.6.5:end -->
+
 <!-- release:1.6.4:start -->
 ## 1.6.4
 
