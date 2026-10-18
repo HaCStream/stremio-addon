@@ -122,3 +122,40 @@ assert.match(output.innerHTML,/colspan="5"/);
     assert '<th>Newest</th>' not in html
     assert '<th>Oldest</th>' not in html
     assert 'x.newest_message' not in html
+
+
+def test_refresh_icon_stays_disabled_through_success_delay_and_recovers_on_error():
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('Node is required to execute the Developer UI JavaScript')
+    html = (Path(__file__).parents[1] / 'stremio_addon' / 'debug.html').read_text()
+    handler = html.split("document.querySelector('#refresh').onclick=", 1)[1].split("document.querySelector('#sync').onclick=", 1)[0]
+    script = r"""
+const assert=require('node:assert/strict');
+const classes=new Set();
+const button={disabled:false,classList:{add:(...xs)=>xs.forEach(x=>classes.add(x)),remove:(...xs)=>xs.forEach(x=>classes.delete(x))},setAttribute(k,v){this[k]=v}};
+const status={};
+const document={querySelector:s=>s==='#refresh'?button:s==='#refresh-status'?status:{classList:{contains:()=>true}}};
+let finishLoad,finishDelay,delay,loads=0,tmdbLoads=0;
+let load=()=>{loads++;return new Promise(resolve=>finishLoad=resolve)};
+const loadTMDB=async()=>{tmdbLoads++};
+const setTimeout=(callback,ms)=>{finishDelay=callback;delay=ms};
+const handler=HANDLER
+(async()=>{
+ const pending=handler();
+ assert.equal(button.disabled,true);assert.ok(classes.has('refreshing'));
+ await handler();assert.equal(loads,1);
+ finishLoad();
+ for(let i=0;i<5;i++)await Promise.resolve();
+ assert.equal(tmdbLoads,1);assert.equal(button.disabled,true);
+ assert.ok(!classes.has('refreshing'));assert.ok(classes.has('success'));
+ assert.equal(delay,3000);await handler();assert.equal(loads,1);
+ finishDelay();await pending;
+ assert.equal(button.disabled,false);assert.equal(classes.size,0);
+ assert.equal(button['aria-label'],'Refresh dashboard');
+ load=async()=>{throw new Error('Server unavailable')};
+ await handler();assert.equal(button.disabled,false);assert.equal(classes.size,0);
+ assert.equal(status.textContent,'Server unavailable');assert.equal(status.className,'bad');
+})().catch(error=>{console.error(error);process.exitCode=1});
+""".replace('HANDLER', handler)
+    subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)
