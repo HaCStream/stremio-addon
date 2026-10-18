@@ -10,7 +10,7 @@ import httpx
 from pydantic import BaseModel, Field
 
 from fastapi import FastAPI, Header, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from .ai_search import ai_query, GeminiCooldown, gemini_diagnostics
 from .core import normalize
@@ -122,7 +122,12 @@ def create_debug_app(runtime):
 
     @app.get('/')
     async def index():
-        return FileResponse(Path(__file__).with_name('debug.html'))
+        skip_auth = app.state.runtime.cfg.skip_debug_auth
+        html = Path(__file__).with_name('debug.html').read_text(encoding='utf-8')
+        html = html.replace('__SKIP_DEV_UI_AUTH__', 'true' if skip_auth else 'false')
+        html = html.replace('__LOGIN_CLASS__', 'hidden' if skip_auth else '')
+        html = html.replace('__APP_CLASS__', '' if skip_auth else 'hidden')
+        return HTMLResponse(html)
 
     @app.get('/api/auth-config')
     async def auth_config():

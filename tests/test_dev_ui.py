@@ -1,5 +1,6 @@
 """Execute the UI request helper against real Response objects in Node."""
 from pathlib import Path
+import json
 import shutil
 import subprocess
 
@@ -51,4 +52,47 @@ const apiKey='test-key';
 })().catch(error=>{console.error(error);process.exitCode=1});
 """
     subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)
-    assert "const config=await api('/api/auth-config')" in html
+    assert "api('/api/auth-config')" not in html
+
+
+@pytest.mark.parametrize('skip_auth', [True, False])
+def test_dashboard_failure_does_not_change_auth_mode(skip_auth):
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('Node is required to execute the Developer UI JavaScript')
+    html = (Path(__file__).parents[1] / 'stremio_addon' / 'debug.html').read_text()
+    startup = 'async function start()' + html.split('async function start()', 1)[1].split('\nstart();', 1)[0]
+    script = r"""
+const assert=require('node:assert/strict');
+const skipAuth=SKIP_AUTH;
+let apiKey=skipAuth?'':'valid-key',loads=0,storageWrites=0;
+const nodes=new Map();
+for(const id of ['#load-error','#load-error-message','#load-retry','#app','#login','#login-error']){
+  const classes=new Set(id==='#login'?['hidden']:[]);
+  nodes.set(id,{textContent:'',classList:{add:c=>classes.add(c),remove:c=>classes.delete(c),contains:c=>classes.has(c)}});
+}
+const document={querySelector:id=>nodes.get(id)};
+const storedKey=()=>storageWrites++;
+let failure=503;
+async function load(){loads++;if(failure)throw Object.assign(Error('Request failed'),{status:failure})}
+""" + startup + r"""
+(async()=>{
+  for(const status of [503,401]){
+    failure=status;
+    await start();
+    if(!skipAuth&&status===401){
+      assert.equal(apiKey,'');assert.equal(storageWrites,1);
+      assert.ok(!nodes.get('#login').classList.contains('hidden'));
+    }else{
+      assert.ok(nodes.get('#login').classList.contains('hidden'));
+      assert.ok(!nodes.get('#app').classList.contains('hidden'));
+      assert.ok(!nodes.get('#load-error').classList.contains('hidden'));
+      assert.equal(storageWrites,0);
+    }
+  }
+  if(skipAuth){failure=0;await nodes.get('#load-retry').onclick();assert.equal(loads,3);
+    assert.ok(nodes.get('#load-error').classList.contains('hidden'))}
+})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+    script = script.replace('SKIP_AUTH', json.dumps(skip_auth))
+    subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)
