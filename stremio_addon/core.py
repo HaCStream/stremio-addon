@@ -1,3 +1,7 @@
+import asyncio
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 import base64
 import hashlib
 import hmac
@@ -249,8 +253,11 @@ def byte_range(value, size):
 
 class Store:
     def __init__(self, path):
-        self.db = sqlite3.connect(path, check_same_thread=False)
-        self.db.row_factory = sqlite3.Row
+        self.path = path
+        self._local = threading.local()
+        self._connections = []
+        self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix='index-db')
+        self._closed = False
         self.db.executescript('''
         PRAGMA journal_mode=WAL;
         CREATE TABLE IF NOT EXISTS videos(id TEXT PRIMARY KEY, channel INTEGER, message INTEGER, title TEXT,
@@ -275,7 +282,8 @@ class Store:
         self.db.execute('CREATE INDEX IF NOT EXISTS videos_channel ON videos(channel)')
         self.db.execute('CREATE INDEX IF NOT EXISTS videos_series ON videos(series_id,season,episode)')
         self.db.commit()
-        if self.db.execute('PRAGMA user_version').fetchone()[0] < 3:
+        rebuilt_search = self.db.execute('PRAGMA user_version').fetchone()[0] < 3
+        if rebuilt_search:
             # Prefer saved captions and rebuild grouping/search without fetching
             # Telegram history again. Also repair legacy malformed episode titles.
             with self.db:
@@ -292,19 +300,66 @@ class Store:
                     self.db.execute('INSERT INTO search VALUES (?,?)', (row['id'], row['search']))
                 self.db.execute('PRAGMA user_version=3')
 
+        # FTS5's UNINDEXED id cannot support point updates. Keep a small B-tree
+        # mapping to the existing FTS rowids; no full text rebuild is needed.
+        if rebuilt_search or not self.db.execute("SELECT 1 FROM sqlite_master WHERE name='search_rows'").fetchone():
+            with self.db:
+                self.db.execute('BEGIN')
+                self.db.execute('CREATE TABLE IF NOT EXISTS search_rows(id TEXT PRIMARY KEY, fts_rowid INTEGER NOT NULL UNIQUE)')
+                self.db.execute('DELETE FROM search_rows')
+                self.db.execute('INSERT INTO search_rows SELECT id,rowid FROM search')
+
+    @property
+    def db(self):
+        # Worker transactions never share a connection with HTTP handlers.
+        # WAL lets the main connection keep reading while indexing commits.
+        if self._closed:
+            raise RuntimeError('Store is closed')
+        if not hasattr(self._local, 'db'):
+            db = sqlite3.connect(self.path, check_same_thread=False)
+            db.row_factory = sqlite3.Row
+            self._local.db = db
+            self._connections.append(db)
+        return self._local.db
+
+    async def run(self, function, *args, **kwargs):
+        """Serialize background SQL on one worker, including whole transactions."""
+        future = asyncio.get_running_loop().run_in_executor(
+            self._worker, partial(function, *args, **kwargs))
+        # A cancelled caller must not close connections while its SQL is running.
+        try:
+            return await asyncio.shield(future)
+        except asyncio.CancelledError:
+            await asyncio.shield(future)
+            raise
+
+    async def close(self):
+        await asyncio.to_thread(self._worker.shutdown, wait=True)
+        self._closed = True
+        for db in self._connections:
+            db.close()
+
+    def _delete_search(self, item):
+        self.db.execute('DELETE FROM search WHERE rowid=(SELECT fts_rowid FROM search_rows WHERE id=?)', (item,))
+        self.db.execute('DELETE FROM search_rows WHERE id=?', (item,))
+
     def upsert(self, row):
         row = dict(row, series_id=series_id(row['title'])
                    if row.get('season') is not None and row.get('episode') is not None else None)
         row = dict(row, search=search_text(row))
+        previous = self.get(row['id'])
+        if previous and all(previous.get(k) == v for k, v in row.items()):
+            return
         with self.db:
             self.db.execute('INSERT OR REPLACE INTO videos (' + ','.join(row) + ') VALUES (' + ','.join('?' for _ in row) + ')', list(row.values()))
-            self.db.execute('DELETE FROM search WHERE id=?', (row['id'],))
-            self.db.execute('INSERT INTO search VALUES (?,?)', (row['id'], row['search']))
+            self._delete_search(row['id'])
+            cursor = self.db.execute('INSERT INTO search VALUES (?,?)', (row['id'], row['search']))
+            self.db.execute('INSERT INTO search_rows VALUES (?,?)', (row['id'], cursor.lastrowid))
 
     def delete(self, item):
         with self.db:
             self.db.execute('DELETE FROM videos WHERE id=?', (item,))
-            self.db.execute('DELETE FROM search WHERE id=?', (item,))
+            self._delete_search(item)
 
     def stored_channels(self):
         # Seek to each distinct channel using the index, rather than walking
@@ -320,41 +375,27 @@ class Store:
 
     async def prune_channels(self, channels, batch_size=500):
         """Remove inaccessible channels in bounded transactions, yielding between batches."""
-        import asyncio
-
         if not channels:
             return
-        placeholders = ','.join('?' for _ in channels)
         params = tuple(channels)
-        # FTS id is UNINDEXED. Walk its rowids once in bounded pages, instead
-        # of scanning the entire FTS table separately for every deleted video.
-        cursor = 0
-        while True:
-            rows = self.db.execute(
-                'SELECT rowid FROM search WHERE rowid>? ORDER BY rowid LIMIT ?',
-                (cursor, batch_size)).fetchall()
-            if not rows:
-                break
-            end = rows[-1][0]
+
+        def batch(channel):
+            rows = self.db.execute('SELECT id FROM videos WHERE channel=? LIMIT ?',
+                                   (channel, batch_size)).fetchall()
             with self.db:
-                self.db.execute(
-                    'DELETE FROM search WHERE rowid>? AND rowid<=? AND EXISTS '
-                    f'(SELECT 1 FROM videos WHERE videos.id=search.id AND channel IN ({placeholders}))',
-                    (cursor, end, *params))
-            cursor = end
-            await asyncio.sleep(0)
-        for channel in params:
-            while True:
-                with self.db:
-                    removed = self.db.execute(
-                        'DELETE FROM videos WHERE rowid IN '
-                        '(SELECT rowid FROM videos WHERE channel=? LIMIT ?)',
-                        (channel, batch_size)).rowcount
-                if not removed:
-                    break
-                await asyncio.sleep(0)
+                for row in rows:
+                    self._delete_search(row['id'])
+                    self.db.execute('DELETE FROM videos WHERE id=?', (row['id'],))
+            return bool(rows)
+
+        def checkpoint(channel):
             with self.db:
                 self.db.execute('DELETE FROM checkpoints WHERE channel=?', (channel,))
+
+        for channel in params:
+            while await self.run(batch, channel):
+                await asyncio.sleep(0)
+            await self.run(checkpoint, channel)
 
     def get(self, item):
         row = self.db.execute('SELECT * FROM videos WHERE id=?', (item,)).fetchone()

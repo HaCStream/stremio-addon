@@ -44,8 +44,8 @@ class TMDB:
         response.raise_for_status()
         return response.json()
 
-    def shows(self):
-        allowed = sorted(self.gateway.channels)
+    def shows(self, allowed=None):
+        allowed = sorted(self.gateway.channels) if allowed is None else sorted(allowed)
         if not allowed:
             return []
         rows = self.store.db.execute(
@@ -78,7 +78,7 @@ class TMDB:
                 'aliases': list(dict.fromkeys(a for a in aliases if a))}
 
     async def candidates(self, identifier, query=''):
-        rows = self.store.series(identifier, self.gateway.channels)
+        rows = await self.store.run(self.store.series, identifier, set(self.gateway.channels))
         if not rows:
             raise ValueError('Unknown or unavailable Telegram show')
         # Sample aliases across the show, not just one episode's filename.
@@ -110,8 +110,8 @@ class TMDB:
 
     async def match_show(self, identifier):
         async with self.lock:
-            previous = self.store.db.execute('SELECT status FROM tmdb_series WHERE series_id=?',
-                                             (identifier,)).fetchone()
+            previous = await self.store.run(lambda: self.store.db.execute(
+                'SELECT status FROM tmdb_series WHERE series_id=?', (identifier,)).fetchone())
             if previous and previous['status'] in ('auto', 'manual', 'blocked'):
                 return
             candidates = await self.candidates(identifier)
@@ -120,24 +120,26 @@ class TMDB:
             # Use it only to disambiguate multiple exact title matches.
             dated = [c for c in exact if c['year_match']]
             selected = exact[0] if len(exact) == 1 else dated[0] if len(dated) == 1 else None
-            self.save(identifier, selected or {}, 'auto' if selected else 'ambiguous' if candidates else 'unmatched', candidates)
+            await self.store.run(self.save, identifier, selected or {},
+                                 'auto' if selected else 'ambiguous' if candidates else 'unmatched', candidates)
             log.debug('TMDB show match: show=%s status=%s candidates=%d',
                      identifier, 'auto' if selected else 'needs_review', len(candidates))
 
     async def select(self, identifier, tmdb_id, season_offset=0, episode_offset=0):
         async with self.lock:
-            if not self.store.series(identifier, self.gateway.channels):
+            if not await self.store.run(self.store.series, identifier, set(self.gateway.channels)):
                 raise ValueError('Unknown or unavailable Telegram show')
             candidate = await self.details(tmdb_id)
-            self.save(identifier, candidate, 'manual', season_offset=season_offset, episode_offset=episode_offset)
+            await self.store.run(self.save, identifier, candidate, 'manual',
+                                 season_offset=season_offset, episode_offset=episode_offset)
             log.info('TMDB manual mapping saved: show=%s tmdb=%s', identifier, tmdb_id)
             return candidate
 
     async def block(self, identifier):
         async with self.lock:
-            if not self.store.series(identifier, self.gateway.channels):
+            if not await self.store.run(self.store.series, identifier, set(self.gateway.channels)):
                 raise ValueError('Unknown or unavailable Telegram show')
-            self.save(identifier, {}, 'blocked')
+            await self.store.run(self.save, identifier, {}, 'blocked')
 
     def streams(self, identifier):
         parsed = public_episode(identifier)
@@ -180,7 +182,7 @@ class TMDB:
         return {r['series_id'] for r in self.store.db.execute('SELECT series_id FROM tmdb_series')}
 
     async def scan_once(self):
-        for show in self.shows():
+        for show in await self.store.run(self.shows, set(self.gateway.channels)):
             saved = show['mapping']
             if saved and (saved['status'] in ('auto', 'manual', 'blocked') or
                           time.time() - saved['checked_at'] < 86400):

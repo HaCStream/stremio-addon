@@ -46,12 +46,13 @@ class Metadata:
     async def match(self, store, kind, identifier):
         tmdb = getattr(self, 'tmdb', None)
         if kind == 'series' and tmdb:
-            mapped = tmdb.streams(identifier)
+            mapped = await store.run(tmdb.streams, identifier)
             if mapped or identifier.startswith('tmdb:'):
                 return mapped
             # A saved identity is authoritative even when this episode is absent.
-            if store.db.execute("SELECT 1 FROM tmdb_series WHERE imdb=? AND status IN ('auto','manual')",
-                                (identifier.split(':')[0],)).fetchone():
+            if await store.run(lambda: store.db.execute(
+                    "SELECT 1 FROM tmdb_series WHERE imdb=? AND status IN ('auto','manual')",
+                    (identifier.split(':')[0],)).fetchone()):
                 return []
         pattern = r'(tt\d{7,10})(?::(\d+):(\d+))?'
         m = re.fullmatch(pattern, identifier)
@@ -62,23 +63,23 @@ class Metadata:
             if kind == 'series' and season is None:
                 return r['season'] is not None and r['episode'] is not None
             return (r['season'], r['episode']) == (season, episode)
-        found = {r['id']: r for r in store.explicit(imdb) if episode_ok(r)}
-        excluded = tmdb.excluded_shows() if tmdb else set()
         aliases, year = await self.resolve(kind, imdb)
-        allowed = {r['channel'] for r in store.db.execute('SELECT DISTINCT channel FROM videos')}
-        for alias in aliases:
-            for row in store.title_matches(alias, allowed):
-                if row['series_id'] in excluded:
-                    continue
-                mapping = store.db.execute('SELECT imdb FROM mappings WHERE id=?', (row['id'],)).fetchone()
-                explicit = mapping['imdb'] if mapping else row['imdb']
-                if explicit and explicit != imdb:
-                    continue
-                titles = title_aliases(row)
-                exact = normalize(alias) in {normalize(t) for t in titles}
-                year_ok = kind == 'series' or (year is not None and row['year'] == year)
-                if exact and year_ok and episode_ok(row):
-                    found[row['id']] = row
-        return list(found.values())
-
-
+        def match_local():
+            found = {r['id']: r for r in store.explicit(imdb) if episode_ok(r)}
+            excluded = tmdb.excluded_shows() if tmdb else set()
+            allowed = store.stored_channels()
+            for alias in aliases:
+                for row in store.title_matches(alias, allowed):
+                    if row['series_id'] in excluded:
+                        continue
+                    mapping = store.db.execute('SELECT imdb FROM mappings WHERE id=?', (row['id'],)).fetchone()
+                    explicit = mapping['imdb'] if mapping else row['imdb']
+                    if explicit and explicit != imdb:
+                        continue
+                    titles = title_aliases(row)
+                    exact = normalize(alias) in {normalize(t) for t in titles}
+                    year_ok = kind == 'series' or (year is not None and row['year'] == year)
+                    if exact and year_ok and episode_ok(row):
+                        found[row['id']] = row
+            return list(found.values())
+        return await store.run(match_local)
