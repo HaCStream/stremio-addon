@@ -20,6 +20,12 @@ configuration:
   USER_SESSION_STRING:
     name: Telegram session string
     description: Complete Telethon StringSession for the Telegram account to index.
+  SCAN_INTERVAL_SECONDS:
+    name: Scan interval (seconds)
+    description: >-
+      Delay between completed Telegram scan cycles. Default 300 seconds.
+      Confirmed history backlogs continue promptly; Sync now bypasses this delay.
+      Restart the add-on after changing this option.
   CACHE_MB:
     name: Cache limit (MiB)
     description: Maximum disk space for cached video chunks in MiB; zero disables the cache.
@@ -81,3 +87,4 @@ configuration:
 network:
   8000/tcp: Stremio addon endpoint.
   8001/tcp: Developer UI endpoint.
+

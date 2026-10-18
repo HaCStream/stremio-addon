@@ -31,6 +31,8 @@ class Telegram:
         self.sync_started = None
         self.task = None
         self.reconcile_cursor = ''
+        self.scan_interval_seconds = settings.scan_interval_seconds
+        self.pending_channels = set()
 
     async def start(self):
         await self.client.connect()
@@ -129,32 +131,56 @@ class Telegram:
         await self.scan_new_messages(channel, entity)
         await self.scan_history(channel, entity)
 
+    def scan_phase(self):
+        self.status.update(phase='indexing' if self.pending_channels else 'checking',
+                           pending_channels=len(self.pending_channels))
+
     async def scan_new_messages(self, channel, entity):
         p = self.store.checkpoint(channel)
-        # Ascending catch-up advances the high-water mark only after each persisted message.
         if p['newest']:
-            async for message in self.client.iter_messages(entity, min_id=p['newest'], reverse=True):
-                await asyncio.sleep(0)
-                self.index(channel, message)
-                p['newest'] = message.id
+            self.scan_phase()
+            # Freeze the target: a busy group cannot extend this catch-up forever.
+            latest = await self.client.get_messages(entity, limit=1, offset_id=0)
+            target = latest[0].id if latest else p['newest']
+            if target > p['newest']:
+                history_pending = channel in self.pending_channels
+                self.pending_channels.add(channel)
+                self.scan_phase()
+                async for message in self.client.iter_messages(
+                        entity, min_id=p['newest'], max_id=target + 1, reverse=True):
+                    await asyncio.sleep(0)
+                    self.index(channel, message)
+                    p['newest'] = message.id
+                    self.store.save_checkpoint(p)
+                # The iterator reached its fixed target (including deleted-ID gaps).
+                p['newest'] = target
                 self.store.save_checkpoint(p)
+                if not history_pending:
+                    self.pending_channels.discard(channel)
+                self.scan_phase()
 
     async def scan_history(self, channel, entity):
         p = self.store.checkpoint(channel)
         if not p['complete']:
-            batch = await self.client.get_messages(entity, limit=100, offset_id=p['oldest'])
-            for message in batch:
+            self.scan_phase()
+            # One look-ahead message proves a backlog remains after this batch.
+            batch = await self.client.get_messages(entity, limit=101, offset_id=p['oldest'])
+            if batch:
+                self.pending_channels.add(channel)
+                self.scan_phase()
+            for message in batch[:100]:
                 await asyncio.sleep(0)
                 self.index(channel, message)
                 p['oldest'] = message.id
                 p['newest'] = max(p['newest'], message.id)
                 self.store.save_checkpoint(p)
-            if len(batch) < 100:
+            if len(batch) <= 100:
                 p['complete'] = 1
                 self.store.save_checkpoint(p)
-            if self.sync_status['state'] == 'running':
-                logger.debug('Sync history batch: channel=%s messages=%s oldest=%s complete=%s',
-                            channel, len(batch), p['oldest'], bool(p['complete']))
+                self.pending_channels.discard(channel)
+            self.scan_phase()
+            logger.debug('History batch: channel=%s messages=%s oldest=%s complete=%s',
+                         channel, min(len(batch), 100), p['oldest'], bool(p['complete']))
 
     async def reconcile(self):
         # Rotating batches eventually check every indexed message, including old edits/deletions.
@@ -179,7 +205,7 @@ class Telegram:
         self.reconcile_cursor = rows[-1]['id']
 
     async def run(self):
-        next_discovery = 0
+        discover_needed = True
         sync_id = None
         scanned_channels = set()
         while True:
@@ -192,10 +218,14 @@ class Telegram:
                         scanned_channels.clear()
                     self.sync_status.update(state='running')
                     logger.info('Sync started: id=%s; discovering channels', self.sync_status['id'])
-                if forced or time.time() >= next_discovery:
+                if forced or discover_needed:
+                    self.scan_phase()
                     await self.discover()
-                    next_discovery = time.time() + 300
+                    self.pending_channels.intersection_update(self.channels)
+                    discover_needed = False
                     logger.info('Channel discovery complete: channels=%s', len(self.channels))
+                self.scan_phase()
+                cycle_error = None
                 for channel, entity in list(self.channels.items()):
                     try:
                         if self.sync_status['state'] == 'running':
@@ -206,10 +236,17 @@ class Telegram:
                             elif self.store.checkpoint(channel)['complete']:
                                 continue
                             await self.scan_history(channel, entity)
-                        else:
+                        elif channel not in scanned_channels:
                             await self.scan(channel, entity)
+                            scanned_channels.add(channel)
+                        elif not self.store.checkpoint(channel)['complete']:
+                            await self.scan_history(channel, entity)
+                        else:
+                            continue
                     except (errors.ChannelPrivateError, errors.ChannelInvalidError):
                         logger.warning('Sync skipped inaccessible channel: id=%s', channel)
+                        cycle_error = 'A channel could not be scanned'
+                        self.pending_channels.discard(channel)
                         self.channels.pop(channel, None)
                         await self.store.prune_channels({channel})
                         if self.known_channels is not None:
@@ -219,14 +256,26 @@ class Telegram:
                 # Reconciliation re-fetches indexed messages; leave it to background passes.
                 if self.sync_status['state'] != 'running':
                     await self.reconcile()
-                self.status.update(phase='indexing' if incomplete else 'ready', last_error=None)
+                self.status.update(phase=('scan_incomplete' if cycle_error else
+                                          'indexing' if self.pending_channels else
+                                          'checking' if incomplete else 'ready'),
+                                   last_error=cycle_error,
+                                   pending_channels=len(self.pending_channels))
+                logger.debug('Scan pass complete: pending_channels=%s incomplete_channels=%s',
+                             len(self.pending_channels),
+                             sum(not self.store.checkpoint(c)['complete'] for c in self.channels))
                 if not incomplete and self.sync_status['state'] == 'running':
                     self.finish_sync()
                 elif self.sync_status['state'] == 'running':
                     remaining = sum(not self.store.checkpoint(c)['complete'] for c in self.channels)
                     logger.info('Sync indexing history: incomplete_channels=%s', remaining)
+                if not incomplete:
+                    discover_needed = True
+                    scanned_channels.clear()
+                    logger.info('Telegram scan complete: channels=%s next_check_seconds=%s',
+                                len(self.channels), self.scan_interval_seconds)
                 try:
-                    await asyncio.wait_for(self.sync_requested.wait(), 2 if incomplete else 30)
+                    await asyncio.wait_for(self.sync_requested.wait(), 2 if incomplete else self.scan_interval_seconds)
                 except TimeoutError:
                     pass
             except errors.FloodWaitError as exc:
@@ -246,7 +295,7 @@ class Telegram:
                 self.finish_sync(type(exc).__name__)
                 logger.error("Telegram indexing failed: error=%s", type(exc).__name__)
                 # Do not log exception text: Telegram exceptions can contain private values.
-                self.status.update(phase='retrying', last_error=type(exc).__name__)
+                self.status.update(phase='scan_incomplete', last_error=type(exc).__name__)
                 await asyncio.sleep(30)
 
     async def message(self, row):
@@ -306,4 +355,5 @@ class Telegram:
             data = await self.chunk(row, message, offset)
             yield data[max(0, start - offset): min(len(data), end - offset + 1)]
             offset += CHUNK
+
 

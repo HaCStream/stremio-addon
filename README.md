@@ -373,3 +373,18 @@ The `/healthz` endpoint checks that the HTTP server is running; it does not conf
 Find it useful? You support is welcome!
 https://buymeacoffee.com/hacstudio
 
+
+
+### Telegram scan status and interval
+
+`SCAN_INTERVAL_SECONDS` is a positive integer (default `300`): the delay after a
+completed Telegram scan cycle before checking again. Set it in the environment
+or Home Assistant options and restart. Initial scanning and confirmed history
+backlogs continue promptly; **Sync now** bypasses the interval. Cycles never overlap.
+
+The Developer UI shows **Checking for updates** during discovery and backlog
+checks, **Indexing** only after Telegram confirms unscanned messages, and
+**Up to date** once all groups finish. **Scan incomplete** means a scan failed.
+Unscanned messages may or may not contain videos. History checkpoints survive
+restarts, and each catch-up uses a fixed latest-message target so new arrivals
+are handled on the next cycle. TMDB matching runs independently of these states.

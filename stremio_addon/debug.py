@@ -109,6 +109,8 @@ def create_debug_app(runtime):
                 'oldest_message': point['oldest'],
                 'newest_message': point['newest'],
                 'complete': bool(point['complete']),
+                'phase': ('indexing' if channel in getattr(shared.tg, 'pending_channels', set())
+                          else 'ready' if point['complete'] else 'checking'),
             })
         return sorted(result, key=lambda item: item['name'].casefold())
 
@@ -145,6 +147,8 @@ def create_debug_app(runtime):
             'connected': shared.tg.client.is_connected(),
             'phase': shared.tg.status.get('phase'),
             'last_error': shared.tg.status.get('last_error'),
+            'pending_channels': shared.tg.status.get('pending_channels', 0),
+            'scan_interval_seconds': shared.cfg.scan_interval_seconds,
             'uptime_seconds': int(time.time() - shared.started_at),
             'videos': shared.store.db.execute('SELECT count(*) FROM videos').fetchone()[0],
             'channels': len(shared.tg.channels),
@@ -316,3 +320,4 @@ def create_debug_app(runtime):
         }
 
     return app
+
