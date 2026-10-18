@@ -1,5 +1,17 @@
 # Changelog
 
+<!-- release:1.6.8:start -->
+## 1.6.8
+
+## What's Changed
+* Show Videos and estimated Queue in Developer UI by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/52
+* Move refresh to the far right as an animated icon by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/53
+* Reduce streaming buffering during indexing and background work by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/54
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.6.7...v1.6.8
+<!-- release:1.6.8:end -->
+
 <!-- release:1.6.7:start -->
 ## 1.6.7
 
