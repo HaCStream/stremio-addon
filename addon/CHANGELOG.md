@@ -1,5 +1,18 @@
 # Changelog
 
+<!-- release:1.6.7:start -->
+## 1.6.7
+
+## What's Changed
+* Show Home Assistant log levels in a dropdown by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/48
+* Add a refresh button to the Developer UI by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/49
+* Show indexing only for confirmed Telegram backlog and configure scan interval by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/51
+* Remove obsolete Developer UI cleanup feature by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/50
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.6.6...v1.6.7
+<!-- release:1.6.7:end -->
+
 <!-- release:1.6.6:start -->
 ## 1.6.6
 
