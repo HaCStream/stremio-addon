@@ -18,7 +18,6 @@ from .telegram import Telegram
 from .version import get_version
 
 interaction_log = logging.getLogger('stremio_addon.interactions')
-interaction_log.setLevel(logging.INFO)
 
 
 def stream_labels(row):
@@ -82,7 +81,7 @@ def create_app_with_runtime(runtime):
                 summary.update(status=status_code, duration_ms=round((time.perf_counter() - started) * 1000, 1))
                 if error:
                     summary['error'] = error
-                interaction_log.log(logging.WARNING if status_code >= 400 else logging.INFO,
+                interaction_log.log(logging.ERROR if status_code >= 500 else logging.WARNING if status_code >= 400 else logging.INFO,
                                     '%s', json.dumps(summary, ensure_ascii=False))
                 runtime.record(summary)
         response.headers['Cache-Control'] = 'private, no-store'

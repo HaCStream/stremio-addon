@@ -21,6 +21,7 @@ ports:
   8001/tcp: 8001
 timeout: 30
 options:
+  DEBUG_LEVEL: INFO
   ADDON_URL: ""
   ADDON_ACCESS_KEY: ""
   TELEGRAM_APP_API_ID: 0
@@ -39,6 +40,7 @@ options:
     DEV_UI_ENABLED: false
     SKIP_DEV_UI_AUTH: false
 schema:
+  DEBUG_LEVEL: list(DEBUG|INFO|WARNING|ERROR|CRITICAL)
   ADDON_URL: url
   ADDON_ACCESS_KEY: password
   TELEGRAM_APP_API_ID: int(1,)

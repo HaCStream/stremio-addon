@@ -121,7 +121,7 @@ class TMDB:
             dated = [c for c in exact if c['year_match']]
             selected = exact[0] if len(exact) == 1 else dated[0] if len(dated) == 1 else None
             self.save(identifier, selected or {}, 'auto' if selected else 'ambiguous' if candidates else 'unmatched', candidates)
-            log.info('TMDB show match: show=%s status=%s candidates=%d',
+            log.debug('TMDB show match: show=%s status=%s candidates=%d',
                      identifier, 'auto' if selected else 'needs_review', len(candidates))
 
     async def select(self, identifier, tmdb_id, season_offset=0, episode_offset=0):
