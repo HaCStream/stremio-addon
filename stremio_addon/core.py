@@ -188,8 +188,8 @@ class Settings:
         if ai_enabled and not gemini_key:
             raise ValueError('GEMINI_API_KEY is required when AI_SEARCH_ENABLED is true')
         debug_level = get('DEBUG_LEVEL', 'INFO').upper()
-        if debug_level not in ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'):
-            raise ValueError('DEBUG_LEVEL must be DEBUG, INFO, WARNING, ERROR or CRITICAL')
+        if debug_level not in ('NOTSET', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'):
+            raise ValueError('DEBUG_LEVEL must be NOTSET, DEBUG, INFO, WARNING, ERROR or CRITICAL')
         return cls(port, url, key, int(get('TELEGRAM_APP_API_ID')), get('TELEGRAM_APP_API_HASH'), get('USER_SESSION_STRING'),
                    Path(get('DATA_DIR', default_data)), int(get('CACHE_MB', '512')) * 1024**2,
                    channel_ids, debug_port, debug_host, debug_enabled, ai_enabled, gemini_key,

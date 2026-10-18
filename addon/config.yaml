@@ -41,7 +41,8 @@ options:
     SKIP_DEV_UI_AUTH: false
     DEV_UI_PASSWORD: ""
 schema:
-  DEBUG_LEVEL: list(DEBUG|INFO|WARNING|ERROR|CRITICAL)
+  # Six choices make Home Assistant render a dropdown instead of radio buttons.
+  DEBUG_LEVEL: list(NOTSET|DEBUG|INFO|WARNING|ERROR|CRITICAL)
   ADDON_URL: url
   ADDON_ACCESS_KEY: password
   TELEGRAM_APP_API_ID: int(1,)
