@@ -382,6 +382,13 @@ completed Telegram scan cycle before checking again. Set it in the environment
 or Home Assistant options and restart. Initial scanning and confirmed history
 backlogs continue promptly; **Sync now** bypasses the interval. Cycles never overlap.
 
+In **Channels & groups**, **Videos** is the number of indexed videos and **Queue**
+estimates the messages still awaiting scanning using message ID ranges.
+It includes deleted-message gaps (and can overestimate in basic groups with shared
+message IDs), requires no extra Telegram requests, and reaches **0** when caught up.
+**Checking…** means the scanner has not checked that channel yet.
+Counts are refreshed by the scanner; refreshing the dashboard reads its current progress.
+
 The Developer UI shows **Checking for updates** during discovery and backlog
 checks, **Indexing** only after Telegram confirms unscanned messages, and
 **Up to date** once all groups finish. **Scan incomplete** means a scan failed.

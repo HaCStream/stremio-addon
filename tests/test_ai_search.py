@@ -116,6 +116,8 @@ class FakeTelegram:
         self.channels = {-100: 'channel'}
         self.client = SimpleNamespace(is_connected=lambda: True)
         self.status = {'phase': 'ready'}
+    def queue(self, channel):
+        return 0
     async def start(self):
         self.store.upsert(item())
         self.store.upsert(dict(item('tg:-100:2', 'Russian Doll'), season=1, episode=2))

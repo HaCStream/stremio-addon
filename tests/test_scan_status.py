@@ -1,5 +1,6 @@
 import asyncio
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -174,3 +175,67 @@ async def test_failed_check_does_not_report_up_to_date(gateway, monkeypatch):
     monkeypatch.setattr(asyncio, 'sleep', sleep)
     with pytest.raises(asyncio.CancelledError):
         await gateway.run()
+
+
+class QueueClient:
+    """Independent history model with sparse IDs (including non-video messages)."""
+    def __init__(self, messages):
+        self.messages = sorted(messages, reverse=True)
+
+    async def get_messages(self, entity, limit, offset_id):
+        return [SimpleNamespace(id=i) for i in self.messages
+                if not offset_id or i < offset_id][:limit]
+
+    async def iter_messages(self, entity, min_id, max_id, reverse):
+        for i in sorted(self.messages):
+            if min_id < i < max_id:
+                yield SimpleNamespace(id=i)
+
+
+def enable_queue_counts(gateway, messages):
+    gateway.client = QueueClient(messages)
+
+
+@pytest.mark.asyncio
+async def test_queue_estimates_include_id_gaps_and_reach_zero(gateway, tmp_path):
+    # 205 messages spread across 20,500 IDs; most need not contain videos.
+    messages = list(range(100, 20600, 100))
+    enable_queue_counts(gateway, messages)
+    observed = []
+    gateway.index = lambda channel, message: observed.append(gateway.queue(channel))
+    assert gateway.queue(1) is None
+    await gateway.scan(1, 1)
+    assert observed[0] == 20500
+    assert gateway.queue(1) == 10599
+
+    # A fresh process must derive remaining history from the saved checkpoint.
+    gateway.store.db.close()
+    gateway.store = Store(tmp_path / 'db')
+    gateway.history_remaining.clear()
+    gateway.new_remaining.clear()
+    assert gateway.queue(1) is None
+    await gateway.scan(1, 1)
+    assert gateway.queue(1) == 599
+    await gateway.scan(1, 1)
+    assert gateway.queue(1) == 0
+    assert gateway.store.checkpoint(1)['complete']
+
+    # Catch-up uses ID distance; deleted messages are acceptable in the estimate.
+    gateway.client.messages = [40000, 30000] + gateway.client.messages
+    observed.clear()
+    await gateway.scan(1, 1)
+    assert observed == [19500, 10000]
+    assert gateway.queue(1) == 0
+
+
+@pytest.mark.asyncio
+async def test_queue_with_empty_history_and_failed_check(gateway):
+    enable_queue_counts(gateway, [])
+    await gateway.scan(1, 1)
+    assert gateway.queue(1) == 0
+    gateway.client.get_messages = AsyncMock(side_effect=ConnectionError)
+    # With a nonempty checkpoint, the next check fails rather than claiming 0.
+    gateway.store.save_checkpoint(dict(channel=1, newest=10, oldest=1, complete=1))
+    with pytest.raises(ConnectionError):
+        await gateway.scan_new_messages(1, 1)
+    assert gateway.queue(1) is None
