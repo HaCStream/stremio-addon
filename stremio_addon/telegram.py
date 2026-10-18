@@ -1,13 +1,14 @@
 import asyncio
 import hashlib
 import logging
-import os
 import time
+from collections import deque
 from pathlib import Path
 from uuid import uuid4
 from telethon import TelegramClient, events, errors, types, utils
 from telethon.sessions import StringSession
 from .core import parse_title
+from .chunk_cache import ChunkCache
 
 logger = logging.getLogger("stremio_addon.telegram")
 
@@ -26,6 +27,7 @@ class Telegram:
         self.cache.mkdir(exist_ok=True)
         self.cache_limit = max(0, settings.cache_bytes)
         self.download_slots = asyncio.Semaphore(4)
+        self.chunk_cache = ChunkCache(self.cache, self.cache_limit)
         self.sync_requested = asyncio.Event()
         self.sync_status = {"id": None, "state": "idle", "error": None}
         self.sync_started = None
@@ -109,7 +111,7 @@ class Telegram:
         self.history_remaining = {c: n for c, n in self.history_remaining.items() if c in channels}
         self.new_remaining = {c: n for c, n in self.new_remaining.items() if c in channels}
         if self.known_channels is None:
-            self.known_channels = self.store.stored_channels()
+            self.known_channels = await self.store.run(self.store.stored_channels)
         removed = self.known_channels - channels.keys()
         if removed:
             logger.info('Removing unavailable channels from index: channels=%s', len(removed))
@@ -132,12 +134,12 @@ class Telegram:
 
     async def update(self, event):
         if event.chat_id in self.channels:
-            self.index(event.chat_id, event.message)
+            await self.store.run(self.index, event.chat_id, event.message)
 
     async def deleted(self, event):
         if event.chat_id in self.channels:
             for message in event.deleted_ids:
-                self.store.delete(f'tg:{event.chat_id}:{message}')
+                await self.store.run(self.store.delete, f'tg:{event.chat_id}:{message}')
 
     async def scan(self, channel, entity):
         await self.scan_new_messages(channel, entity)
@@ -163,13 +165,13 @@ class Telegram:
                 async for message in self.client.iter_messages(
                         entity, min_id=p['newest'], max_id=target + 1, reverse=True):
                     await asyncio.sleep(0)
-                    self.index(channel, message)
+                    await self.store.run(self.index, channel, message)
                     p['newest'] = message.id
-                    self.store.save_checkpoint(p)
+                    await self.store.run(self.store.save_checkpoint, p)
                     self.new_remaining[channel] = max(0, target - message.id)
                 # The iterator reached its fixed target (including deleted-ID gaps).
                 p['newest'] = target
-                self.store.save_checkpoint(p)
+                await self.store.run(self.store.save_checkpoint, p)
                 if not history_pending:
                     self.pending_channels.discard(channel)
                 self.scan_phase()
@@ -187,14 +189,14 @@ class Telegram:
                 self.scan_phase()
             for message in batch[:100]:
                 await asyncio.sleep(0)
-                self.index(channel, message)
+                await self.store.run(self.index, channel, message)
                 p['oldest'] = message.id
                 p['newest'] = max(p['newest'], message.id)
-                self.store.save_checkpoint(p)
+                await self.store.run(self.store.save_checkpoint, p)
                 self.history_remaining[channel] = max(0, message.id - 1)
             if len(batch) <= 100:
                 p['complete'] = 1
-                self.store.save_checkpoint(p)
+                await self.store.run(self.store.save_checkpoint, p)
                 self.pending_channels.discard(channel)
                 self.history_remaining[channel] = 0
             self.scan_phase()
@@ -203,7 +205,9 @@ class Telegram:
 
     async def reconcile(self):
         # Rotating batches eventually check every indexed message, including old edits/deletions.
-        rows = self.store.db.execute('SELECT id,channel,message FROM videos WHERE id>? ORDER BY id LIMIT 100', (self.reconcile_cursor,)).fetchall()
+        rows = await self.store.run(lambda: self.store.db.execute(
+            'SELECT id,channel,message FROM videos WHERE id>? ORDER BY id LIMIT 100',
+            (self.reconcile_cursor,)).fetchall())
         if not rows:
             self.reconcile_cursor = ''
             return
@@ -218,9 +222,9 @@ class Telegram:
             for row, message in zip(group, messages):
                 if message and not isinstance(message, types.MessageEmpty):
                     await asyncio.sleep(0)
-                    self.index(channel, message)
+                    await self.store.run(self.index, channel, message)
                 else:
-                    self.store.delete(row['id'])
+                    await self.store.run(self.store.delete, row['id'])
         self.reconcile_cursor = rows[-1]['id']
 
     async def run(self):
@@ -324,22 +328,21 @@ class Telegram:
         try:
             message = await self.client.get_messages(entity, ids=row['message'])
         except (errors.ChannelPrivateError, errors.ChannelInvalidError):
-            self.store.delete(row['id'])
+            await self.store.run(self.store.delete, row['id'])
             raise FileNotFoundError() from None
         if not message or not message.document:
-            self.store.delete(row['id'])
+            await self.store.run(self.store.delete, row['id'])
             raise FileNotFoundError()
-        self.index(row['channel'], message)
+        await self.store.run(self.index, row['channel'], message)
         return message
 
     async def chunk(self, row, message, offset):
         # Includes Telegram document ID: edited media never reuses old cached bytes.
         key = hashlib.sha256(f"{row['id']}:{message.document.id}:{offset}".encode()).hexdigest()
-        path = self.cache / key
         async with self.download_slots:
-            if path.exists():
-                data = path.read_bytes()
-                os.utime(path, None)
+            data = await self.chunk_cache.get(key)
+            expected = min(CHUNK, message.document.size - offset)
+            if data is not None and len(data) == expected:
                 return data
             for attempt in range(2):
                 iterator = self.client.iter_download(message, offset=offset, request_size=CHUNK, chunk_size=CHUNK, limit=1)
@@ -354,25 +357,32 @@ class Telegram:
                         raise IOError('Media changed during playback')
                 finally:
                     await iterator.close()
-            expected = min(CHUNK, message.document.size - offset)
             if len(data) != expected:
                 raise IOError('Incomplete Telegram chunk')
-            if self.cache_limit >= len(data):
-                files = sorted(self.cache.iterdir(), key=lambda p: p.stat().st_mtime)
-                total = sum(p.stat().st_size for p in files)
-                for old in files:
-                    if total + len(data) <= self.cache_limit:
-                        break
-                    total -= old.stat().st_size
-                    old.unlink(missing_ok=True)
-                path.write_bytes(data)
+            await self.chunk_cache.put(key, data)
             return data
 
     async def stream(self, row, message, start, end):
+        # Prefetch up to four 512 KiB chunks, sharing four download slots
+        # globally. Start the next requests before waiting for the player to read.
         offset = start // CHUNK * CHUNK
-        while offset <= end:
-            data = await self.chunk(row, message, offset)
-            yield data[max(0, start - offset): min(len(data), end - offset + 1)]
-            offset += CHUNK
+        pending = deque()
 
+        def fill():
+            nonlocal offset
+            while offset <= end and len(pending) < 4:
+                pending.append((offset, asyncio.create_task(self.chunk(row, message, offset))))
+                offset += CHUNK
 
+        fill()
+        try:
+            while pending:
+                chunk_offset, task = pending[0]
+                data = await task
+                pending.popleft()
+                fill()
+                yield data[max(0, start - chunk_offset): min(len(data), end - chunk_offset + 1)]
+        finally:
+            for _, task in pending:
+                task.cancel()
+            await asyncio.gather(*(task for _, task in pending), return_exceptions=True)

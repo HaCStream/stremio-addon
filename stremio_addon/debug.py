@@ -95,10 +95,10 @@ def create_debug_app(runtime):
                     value = value.replace(secret, '[redacted]')
         return value
 
-    def channels():
+    async def channels():
         shared = app.state.runtime
-        counts = {r['channel']: r['count'] for r in shared.store.db.execute(
-            'SELECT channel, count(*) AS count FROM videos GROUP BY channel')}
+        counts = await shared.store.run(lambda: {r['channel']: r['count'] for r in shared.store.db.execute(
+            'SELECT channel, count(*) AS count FROM videos GROUP BY channel')})
         result = []
         for channel, entity in shared.tg.channels.items():
             point = shared.store.checkpoint(channel)
@@ -149,7 +149,7 @@ def create_debug_app(runtime):
             'pending_channels': shared.tg.status.get('pending_channels', 0),
             'scan_interval_seconds': shared.cfg.scan_interval_seconds,
             'uptime_seconds': int(time.time() - shared.started_at),
-            'videos': shared.store.db.execute('SELECT count(*) FROM videos').fetchone()[0],
+            'videos': await shared.store.run(lambda: shared.store.db.execute('SELECT count(*) FROM videos').fetchone()[0]),
             'channels': len(shared.tg.channels),
             'debug_port': shared.cfg.debug_port,
             'addon_port': shared.cfg.port,
@@ -162,7 +162,7 @@ def create_debug_app(runtime):
     @app.get('/api/channels')
     async def channel_list(x_debug_key: str | None = Header(None)):
         authorize(x_debug_key)
-        return {'channels': channels()}
+        return {'channels': await channels()}
 
     def tmdb_service():
         service = app.state.runtime.tmdb
@@ -174,7 +174,8 @@ def create_debug_app(runtime):
     async def tmdb_shows(x_debug_key: str | None = Header(None)):
         authorize(x_debug_key)
         return {'enabled': bool(app.state.runtime.cfg.tmdb_api_key),
-                'shows': app.state.runtime.tmdb.shows()}
+                'shows': await app.state.runtime.store.run(
+                    app.state.runtime.tmdb.shows, set(app.state.runtime.tg.channels))}
 
     @app.get('/api/tmdb/candidates')
     async def tmdb_candidates(series_id: str, q: str = Query('', max_length=200),
@@ -246,7 +247,7 @@ def create_debug_app(runtime):
         authorize(x_debug_key)
         shared = app.state.runtime
         started = time.perf_counter()
-        available = channels()
+        available = await channels()
         allowed = set(shared.tg.channels)
         aliases, resolved_year = [], None
         if mode == 'ai':
@@ -276,7 +277,7 @@ def create_debug_app(runtime):
                 gemini_diagnostics.reset(token)
             matched = [(row, 'AI online title match') for rows in grouped.values() for row in rows]
         elif mode == 'text':
-            rows = shared.store.catalog(q, skip, 100) if q.strip() else []
+            rows = await shared.store.run(shared.store.catalog, q, skip, 100) if q.strip() else []
             matched = [(row, 'full-text index') for row in rows if row['channel'] in allowed]
         else:
             rows = await shared.metadata.match(shared.store, kind, q.strip())

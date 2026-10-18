@@ -100,13 +100,13 @@ class AISearch:
                 delay = self._retry_delay(response)
                 self.strikes += 1
                 self.retry_at = time.time() + delay
-                self._save_cooldown()
+                await self.store.run(self._save_cooldown)
                 raise GeminiCooldown('Gemini rate limited')
             response.raise_for_status()
             if self.strikes:
                 self.strikes = 0
                 self.retry_at = 0
-                self._save_cooldown()
+                await self.store.run(self._save_cooldown)
             return response.json()
 
     async def discover(self, query):
@@ -172,7 +172,7 @@ class AISearch:
         for title in titles['movies' if kind == 'movie' else 'series']:
             # FTS retrieves candidates; normalized title equality prevents a
             # caption mention or similarly named sequel from becoming a result.
-            for row in self.store.title_matches(title, allowed):
+            for row in await self.store.run(self.store.title_matches, title, allowed):
                 if kind == 'movie' and row['series_id'] is not None:
                     continue
                 rows.setdefault(row['series_id'] or row['id'], row)

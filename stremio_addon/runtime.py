@@ -26,7 +26,7 @@ class Runtime:
             if not self.users:
                 self.cfg = self.settings or Settings.env()
                 self.cfg.data.mkdir(parents=True, exist_ok=True)
-                self.store = Store(self.cfg.data / 'index.sqlite3')
+                self.store = await asyncio.to_thread(Store, self.cfg.data / 'index.sqlite3')
                 self.tg = self.gateway_factory(self.cfg, self.store)
                 self.metadata = Metadata()
                 self.tmdb = TMDB(self.cfg, self.store, self.tg)
@@ -41,7 +41,7 @@ class Runtime:
                         await self.ai.close()
                     await self.metadata.http.aclose()
                     await self.tmdb.http.aclose()
-                    self.store.db.close()
+                    await self.store.close()
                     raise
                 self.started_at = time.time()
                 if self.cfg.tmdb_api_key:
@@ -62,7 +62,7 @@ class Runtime:
                 await self.tg.close()
                 await self.metadata.http.aclose()
                 await self.tmdb.http.aclose()
-                self.store.db.close()
+                await self.store.close()
 
     def record(self, event):
         self.events.appendleft(dict(timestamp=int(time.time()), **event))

@@ -106,12 +106,12 @@ def create_app_with_runtime(runtime):
         if not hmac.compare_digest(key.encode(), app.state.cfg.key.encode()):
             raise HTTPException(404)
 
-    def token_row(token, scope):
+    async def token_row(token, scope):
         try:
             item = app.state.tokens.verify(token, scope)
         except ValueError:
             raise HTTPException(403, 'Invalid or expired token') from None
-        row = app.state.store.get(item)
+        row = await app.state.store.run(app.state.store.get, item)
         if not row or row['channel'] not in app.state.tg.channels:
             raise HTTPException(404)
         return row
@@ -119,12 +119,12 @@ def create_app_with_runtime(runtime):
     def url(row, scope):
         return f'{app.state.cfg.url}/{scope}/{app.state.tokens.sign(row["id"], scope)}'
 
-    def meta(row, kind='movie', episodes=None, identifier=None):
+    async def meta(row, kind='movie', episodes=None, identifier=None):
         result = {'id': row['id'], 'type': kind, 'name': row['title'], 'posterShape': 'landscape', 'poster': url(row, 'thumb'), 'description': row['caption'] + '\n\n' + row['channel_name'], 'releaseInfo': str(row['year'] or ''), 'behaviorHints': {'defaultVideoId': row['id']}}
         if kind == 'series':
             identifier = identifier or row['series_id'] or row['id']
             if episodes is None:
-                episodes = app.state.store.series(identifier, app.state.tg.channels) or [row]
+                episodes = await app.state.store.run(app.state.store.series, identifier, set(app.state.tg.channels)) or [row]
             result['id'] = identifier
             result.pop('behaviorHints')
             videos = {}
@@ -193,9 +193,9 @@ def create_app_with_runtime(runtime):
                     request.state.interaction['ai_status'] = type(exc).__name__
                     rows = []
         else:
-            rows = app.state.store.grouped_catalog(kind, app.state.tg.channels, query, skip)
+            rows = await app.state.store.run(app.state.store.grouped_catalog, kind, set(app.state.tg.channels), query, skip)
         results(request, rows)
-        return {'metas': [meta(r, kind) for r in rows]}
+        return {'metas': [await meta(r, kind) for r in rows]}
 
     @app.get('/{key}/meta/{kind}/{item}.json')
     async def detail(key, kind, item, request: Request):
@@ -204,21 +204,21 @@ def create_app_with_runtime(runtime):
         rows = []
         identifier = None
         if kind == 'series' and re.fullmatch(r'tg:series:[0-9a-f]{24}', item):
-            rows = app.state.store.series(item, app.state.tg.channels)
+            rows = await app.state.store.run(app.state.store.series, item, set(app.state.tg.channels))
             identifier = item
         elif kind == 'series' and re.fullmatch(r'tt\d{7,10}', item):
             rows = await app.state.metadata.match(app.state.store, kind, item)
             rows = [r for r in rows if r['channel'] in app.state.tg.channels]
             identifier = item
         else:
-            row = app.state.store.get(item)
+            row = await app.state.store.run(app.state.store.get, item)
             if kind in ('movie', 'series') and row and row['channel'] in app.state.tg.channels:
                 rows = [row]
                 if kind == 'series' and row['series_id']:
                     identifier = row['series_id']
-                    rows = app.state.store.series(identifier, app.state.tg.channels)
+                    rows = await app.state.store.run(app.state.store.series, identifier, set(app.state.tg.channels))
         results(request, rows)
-        return {'meta': meta(rows[0], kind, rows if identifier else None, identifier) if rows else None}
+        return {'meta': await meta(rows[0], kind, rows if identifier else None, identifier) if rows else None}
 
     @app.get('/{key}/stream/{kind}/{item}.json')
     async def sources(key, kind, item, request: Request):
@@ -232,9 +232,9 @@ def create_app_with_runtime(runtime):
             return {'streams': []}
         episode = re.fullmatch(r'(tg:series:[0-9a-f]{24}):(\d+):(\d+)', item)
         if kind == 'series' and episode:
-            rows = app.state.store.series(episode[1], app.state.tg.channels, int(episode[2]), int(episode[3]))
+            rows = await app.state.store.run(app.state.store.series, episode[1], set(app.state.tg.channels), int(episode[2]), int(episode[3]))
         elif item.startswith('tg:'):
-            row = app.state.store.get(item)
+            row = await app.state.store.run(app.state.store.get, item)
             rows = [row] if row else []
         else:
             rows = await app.state.metadata.match(app.state.store, kind, item)
@@ -245,7 +245,7 @@ def create_app_with_runtime(runtime):
     @app.get('/{key}/status')
     async def status(key):
         auth(key)
-        return {**app.state.tg.status, 'connected': app.state.tg.client.is_connected(), 'channels': len(app.state.tg.channels), 'videos': app.state.store.db.execute('SELECT count(*) FROM videos').fetchone()[0], 'checkpoints': [dict(r) for r in app.state.store.db.execute('SELECT * FROM checkpoints')]}
+        return {**app.state.tg.status, 'connected': app.state.tg.client.is_connected(), 'channels': len(app.state.tg.channels), 'videos': await app.state.store.run(lambda: app.state.store.db.execute('SELECT count(*) FROM videos').fetchone()[0]), 'checkpoints': [dict(r) for r in app.state.store.db.execute('SELECT * FROM checkpoints')]}
 
     class Mapping(BaseModel):
         imdb: str
@@ -253,20 +253,22 @@ def create_app_with_runtime(runtime):
     @app.put('/{key}/mapping/{item}')
     async def mapping(key, item, body: Mapping):
         auth(key)
-        if not app.state.store.get(item) or not re.fullmatch(r'tt\d{7,10}', body.imdb):
+        if not await app.state.store.run(app.state.store.get, item) or not re.fullmatch(r'tt\d{7,10}', body.imdb):
             raise HTTPException(400, 'Expected indexed Telegram ID and IMDb ID')
-        with app.state.store.db:
-            app.state.store.db.execute('INSERT OR REPLACE INTO mappings VALUES (?,?)', (item, body.imdb))
+        def save():
+            with app.state.store.db:
+                app.state.store.db.execute('INSERT OR REPLACE INTO mappings VALUES (?,?)', (item, body.imdb))
+        await app.state.store.run(save)
         return {'ok': True}
 
     @app.api_route('/play/{token}', methods=['GET', 'HEAD'])
     async def play(token, request: Request):
-        row = token_row(token, 'play')
+        row = await token_row(token, 'play')
         try:
             message = await app.state.tg.message(row)
         except FileNotFoundError:
             raise HTTPException(404) from None
-        row = app.state.store.get(row['id'])
+        row = await app.state.store.run(app.state.store.get, row['id'])
         size = message.document.size
         try:
             start, end, code = byte_range(request.headers.get('range'), size)
@@ -281,6 +283,9 @@ def create_app_with_runtime(runtime):
         # Fetch first chunk before sending success headers, allowing a clean upstream error.
         try:
             first = await anext(iterator)
+        except asyncio.CancelledError:
+            await iterator.aclose()
+            raise
         except Exception:
             await iterator.aclose()
             raise HTTPException(502, 'Telegram download unavailable') from None
@@ -295,7 +300,7 @@ def create_app_with_runtime(runtime):
 
     @app.get('/thumb/{token}')
     async def thumb(token):
-        row = token_row(token, 'thumb')
+        row = await token_row(token, 'thumb')
         try:
             message = await app.state.tg.message(row)
             data = await app.state.tg.client.download_media(message, file=bytes, thumb=-1)
