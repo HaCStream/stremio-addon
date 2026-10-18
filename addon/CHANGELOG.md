@@ -1,5 +1,20 @@
 # Changelog
 
+<!-- release:1.6.6:start -->
+## 1.6.6
+
+## What's Changed
+* fix: include results in TMDB searches by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/42
+* Fix Developer UI getting stuck on login when authentication is disabled by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/43
+* Add watchdog diagnostics and configurable log levels by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/44
+* Optimize discovery and cleanup for large Telegram indexes by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/45
+* Show full Stremio/Nuvio install URL in Developer UI by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/46
+* Add optional DEV_UI_PASSWORD for Developer UI login by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/47
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.6.5...v1.6.6
+<!-- release:1.6.6:end -->
+
 <!-- release:1.6.5:start -->
 ## 1.6.5
 
