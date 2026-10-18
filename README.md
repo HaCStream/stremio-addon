@@ -69,7 +69,8 @@ Set these values in `.env` for Docker Compose. In Home Assistant, enter the corr
 | `USER_SESSION_STRING` | Complete authorized Telethon StringSession from the session generator. | `true` | — | `YOUR_TELETHON_STRING_SESSION` |
 | `DEV_UI_ENABLED` | Enable the separate Developer UI. | `false` | `true` | `false` |
 | `DEV_UI_HOST` | Dashboard bind address. Keep the default for Docker port forwarding. | `false` | `0.0.0.0` | `0.0.0.0` |
-| `SKIP_DEV_UI_AUTH` | Open the Developer UI without an API key; anyone with dashboard access can search and request a sync. | `false` | `false` | `true` |
+| `DEV_UI_PASSWORD` | Optional custom Developer UI login password. Blank uses `ADDON_ACCESS_KEY`. Does not change the Stremio/Nuvio access key. Ignored when `SKIP_DEV_UI_AUTH=true`. | `false` | Empty | `YOUR_CUSTOM_PASSWORD` |
+| `SKIP_DEV_UI_AUTH` | Open the Developer UI without a password; anyone with dashboard access can search and request a sync. | `false` | `false` | `true` |
 | `CACHE_MB` | Disk chunk-cache limit in MiB; `0` disables new cache writes. | `false` | `512` | `1024` |
 | `CHANNEL_IDS` | Comma-separated negative channel or group IDs limiting which joined public and private channels and groups are indexed. Blank selects all eligible channels and groups. | `false` | Empty | `-1001234567890,-1009876543210` |
 | `DISPLAY_COLLECTION` | Show Telegram Videos and Telegram Series collections on the main screen in Stremio/Nuvio. Search remains available when disabled. Restart and refresh/reinstall the addon in your client after changing it. | `false` | `false` | `true` |
@@ -356,7 +357,7 @@ Then open `http://127.0.0.1:8001` locally.
 - **🔌 Connection:** inspect Telegram connection and indexing state.
 - **📋 Channels:** see which channels and groups are included in queries.
 - **🔎 Search:** inspect matching results and diagnostic details without playback.
-- **👁️ Credentials:** reveal or hide the API key while entering it.
+- **👁️ Credentials:** reveal or hide the login password while entering it.
 - **🔄 Sync now:** trigger channel discovery and catch-up indexing after joining a channel or group or adding a video. The button stays disabled with **Syncing...** until discovery and indexing finish, then shows **Sync done!**. Failures appear in the dashboard, and sync progress is logged.
 - **📝 Activity:** review recent addon activity.
 

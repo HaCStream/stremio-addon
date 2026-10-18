@@ -280,19 +280,21 @@ def test_nested_home_assistant_debug_and_ai_options(tmp_path, monkeypatch):
         'ADDON_URL': 'https://ha.example.com', 'ADDON_ACCESS_KEY': 'a' * 32,
         'TELEGRAM_APP_API_ID': 123, 'TELEGRAM_APP_API_HASH': 'hash', 'USER_SESSION_STRING': 'session',
         'DISPLAY_COLLECTION': True,
-        'developer_ui': {'DEV_UI_ENABLED': False, 'SKIP_DEV_UI_AUTH': True},
+        'developer_ui': {'DEV_UI_ENABLED': False, 'SKIP_DEV_UI_AUTH': True,
+                         'DEV_UI_PASSWORD': 'custom-password'},
         'ai': {'AI_SEARCH_ENABLED': True, 'GEMINI_API_KEY': 'secret',
                'REQUIRE_AI_SUFFIX_FOR_AI_SEARCH': False},
     }))
     real_path = core.Path
     monkeypatch.setattr(core, 'Path', lambda value: options if value == '/data/options.json' else real_path(value))
     for name in ('ADDON_URL', 'ADDON_ACCESS_KEY', 'TELEGRAM_APP_API_ID', 'TELEGRAM_APP_API_HASH', 'USER_SESSION_STRING',
-                 'DEV_UI_HOST', 'DEV_UI_ENABLED', 'DEBUG_PORT', 'SKIP_DEV_UI_AUTH', 'AI_SEARCH_ENABLED', 'GEMINI_API_KEY',
+                 'DEV_UI_PASSWORD', 'DEV_UI_HOST', 'DEV_UI_ENABLED', 'DEBUG_PORT', 'SKIP_DEV_UI_AUTH', 'AI_SEARCH_ENABLED', 'GEMINI_API_KEY',
                  'REQUIRE_AI_SUFFIX_FOR_AI_SEARCH', 'DISPLAY_COLLECTION'):
         monkeypatch.delenv(name, raising=False)
     settings = core.Settings.env()
     assert not settings.debug_enabled
     assert settings.skip_debug_auth
+    assert settings.dev_ui_password == 'custom-password'
     assert settings.debug_port == 8001
     assert settings.debug_host == '0.0.0.0'
     assert settings.ai_search_enabled
@@ -436,12 +438,12 @@ def test_skip_debug_auth_only_applies_to_debug_dashboard(tmp_path):
 def test_debug_server_error_is_json_and_logs_redacted_traceback(tmp_path, caplog):
     cfg = Settings(8000, 'https://example.com', 'a' * 32, 1, 'hash',
                    'private-session', tmp_path, skip_debug_auth=True,
-                   gemini_api_key='private-gemini-key', tmdb_api_key='private-tmdb-key')
+                   gemini_api_key='private-gemini-key', tmdb_api_key='private-tmdb-key', dev_ui_password='private-ui-password')
     app = create_debug_app(Runtime(cfg, FakeTelegram))
     with TestClient(app) as client:
         def fail():
             raise RuntimeError(f'{cfg.key} {cfg.session} {cfg.api_hash} '
-                               f'{cfg.gemini_api_key} {cfg.tmdb_api_key} '
+                               f'{cfg.gemini_api_key} {cfg.tmdb_api_key} {cfg.dev_ui_password} '
                                'https://secret.example/token')
         app.state.runtime.tg.client.is_connected = fail
         response = client.get('/api/overview?secret=private-query')
@@ -454,7 +456,7 @@ def test_debug_server_error_is_json_and_logs_redacted_traceback(tmp_path, caplog
         assert 'RuntimeError' in caplog.text
         assert '[redacted]' in caplog.text
         for secret in (cfg.key, cfg.session, cfg.api_hash, cfg.gemini_api_key,
-                       cfg.tmdb_api_key, 'secret.example', 'private-query'):
+                       cfg.tmdb_api_key, cfg.dev_ui_password, 'secret.example', 'private-query'):
             assert secret not in caplog.text
             assert secret not in response.text
         assert client.get('/api/channels').status_code == 200
@@ -962,3 +964,33 @@ async def test_discovery_after_restart_cleans_removed_channels_once(tmp_path):
     store.stored_channels = lambda: (_ for _ in ()).throw(AssertionError('must only read stored channels once'))
     await gateway.discover()
     store.db.close()
+
+
+@pytest.mark.parametrize('password', ['', 'custom-password'])
+@pytest.mark.parametrize('skip_auth', [False, True])
+def test_custom_dev_ui_password(tmp_path, password, skip_auth):
+    cfg = Settings(8000, 'https://example.com', 'a' * 32, 1, 'hash',
+                   'session', tmp_path, dev_ui_password=password, skip_debug_auth=skip_auth)
+    with TestClient(create_debug_app(Runtime(cfg, FakeTelegram))) as client:
+        for credential in ('', 'wrong', cfg.key, password):
+            response = client.get('/api/overview', headers={'X-Debug-Key': credential})
+            expected = skip_auth or credential == (password or cfg.key)
+            assert response.status_code == (200 if expected else 401)
+        assert not password or password not in client.get('/').text
+    with TestClient(create_app(cfg, FakeTelegram)) as client:
+        assert client.get(f'/{cfg.key}/manifest.json').status_code == 200
+        assert client.get('/custom-password/manifest.json').status_code == 404
+
+
+@pytest.mark.parametrize('password', [None, '', 'custom-password'])
+def test_dev_ui_password_environment(monkeypatch, password):
+    import stremio_addon.core as core
+    monkeypatch.setattr(core.Path, 'is_file', lambda self: False)
+    for name, value in dict(ADDON_URL='https://example.com', ADDON_ACCESS_KEY='a' * 32,
+                            TELEGRAM_APP_API_ID='1', TELEGRAM_APP_API_HASH='hash',
+                            USER_SESSION_STRING='session').items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv('DEV_UI_PASSWORD', raising=False)
+    if password is not None:
+        monkeypatch.setenv('DEV_UI_PASSWORD', password)
+    assert core.Settings.env().dev_ui_password == (password or '')

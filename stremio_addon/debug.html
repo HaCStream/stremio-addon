@@ -11,7 +11,7 @@
 </head>
 <body>
 <section id="load-error" class="panel hidden" role="status"><span id="load-error-message"></span> <button id="load-retry" type="button">Retry loading dashboard</button></section>
-<section id="login" class="login panel __LOGIN_CLASS__"><h1>Stremio Telegram Developer UI</h1><p class="muted">Enter the add-on API key. It stays in this browser tab.</p><form id="login-form" style="display:flex"><div class="password-field"><input id="key" type="password" autocomplete="current-password" placeholder="API key" required><button id="toggle-key" type="button" aria-label="Show API key" title="Show API key">👁</button></div><button class="primary">Open dashboard</button></form><p id="login-error" class="bad"></p></section>
+<section id="login" class="login panel __LOGIN_CLASS__"><h1>Stremio Telegram Developer UI</h1><p class="muted">Enter your Developer UI password (or the add-on API key if no custom password is set). It stays in this browser tab.</p><form id="login-form" style="display:flex"><div class="password-field"><input id="key" type="password" autocomplete="current-password" placeholder="Password" required><button id="toggle-key" type="button" aria-label="Show password" title="Show password">👁</button></div><button class="primary">Open dashboard</button></form><p id="login-error" class="bad"></p></section>
 <div id="app" class="__APP_CLASS__"><header><div><h1>Stremio Telegram Developer UI</h1><span id="connection" class="muted">Loading…</span></div><nav><button id="sync" type="button">Sync now</button><button id="cleanup" type="button">Cleanup</button><span id="cleanup-status" class="muted" role="status"></span><span id="sync-status" class="muted" role="status"></span><button class="tab active" data-view="overview">Overview</button><button class="tab" data-view="channels">Channels &amp; groups</button><button class="tab" data-view="search">Search</button><button class="tab" data-view="tmdb">TMDB matching</button><button class="tab" data-view="activity">Activity</button></nav></header><main>
   <section id="overview" class="view active"><div id="cards" class="cards"></div><div class="panel" style="margin-bottom:16px"><h2>Install in Stremio / Nuvio</h2><p class="muted">Copy this complete manifest URL into your app to install the add-on.</p><label for="install-url">Install URL (includes API key)</label><div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><input id="install-url" type="text" readonly dir="ltr" style="flex:1;min-width:200px" spellcheck="false"><button id="copy-install-url" type="button" disabled>Copy URL</button></div><p id="copy-install-status" class="muted" role="status" aria-live="polite"></p></div><div class="panel"><h2>Configuration</h2><p id="config" class="muted"></p><p>This dashboard uses its own listener and relative API paths. Dashboard requests use this listener; the install URL uses the configured addon URL.</p></div></section>
   <section id="channels" class="view"><div class="panel scroll"><table><caption>Channels and groups included in searches</caption><thead><tr><th>Channel</th><th>ID</th><th>Videos</th><th>Newest</th><th>Oldest</th><th>Index</th></tr></thead><tbody id="channel-rows"></tbody></table></div></section>
@@ -43,7 +43,7 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const ingressUrl=path=>new URL(path.replace(/^\/+/,''),window.location.href).toString();
 async function api(path,options={}){
   const r=await fetch(ingressUrl(path),{...options,headers:{...(options.headers||{}),'X-Debug-Key':apiKey}});
-  if(r.status===401){const error=new Error('Invalid API key');error.status=401;throw error}
+  if(r.status===401){const error=new Error('Invalid Developer UI password');error.status=401;throw error}
   const body=await r.text();
   let data;
   try{data=JSON.parse(body)}catch{
@@ -72,7 +72,7 @@ document.querySelector('#copy-install-url').onclick=async()=>{
   }
 };
 document.querySelector('#login-form').onsubmit=async e=>{e.preventDefault();apiKey=document.querySelector('#key').value;try{await load();storedKey(apiKey)}catch(err){document.querySelector('#login-error').textContent=err.message}};
-document.querySelector('#toggle-key').onclick=()=>{const input=document.querySelector('#key'),show=input.type==='password';input.type=show?'text':'password';document.querySelector('#toggle-key').setAttribute('aria-label',show?'Hide API key':'Show API key');document.querySelector('#toggle-key').title=show?'Hide API key':'Show API key'};
+document.querySelector('#toggle-key').onclick=()=>{const input=document.querySelector('#key'),show=input.type==='password';input.type=show?'text':'password';document.querySelector('#toggle-key').setAttribute('aria-label',show?'Hide password':'Show password');document.querySelector('#toggle-key').title=show?'Hide password':'Show password'};
 document.querySelector('#sync').onclick=async()=>{
   const button=document.querySelector('#sync'),status=document.querySelector('#sync-status');
   button.disabled=true;status.className='muted';status.textContent='Syncing...';
