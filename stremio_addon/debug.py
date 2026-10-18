@@ -236,14 +236,6 @@ def create_debug_app(runtime):
         authorize(x_debug_key)
         return {'sync': dict(app.state.runtime.tg.sync_status)}
 
-    @app.post('/api/cleanup')
-    async def cleanup(x_debug_key: str | None = Header(None)):
-        authorize(x_debug_key)
-        shared = app.state.runtime
-        removed = shared.store.cleanup_ai_data()
-        shared.record({'event': 'cleanup', 'status': 200})
-        return {'removed_records': sum(removed.values()), 'removed': removed}
-
     @app.get('/api/search')
     async def search(
         q: str = Query('', max_length=500),
