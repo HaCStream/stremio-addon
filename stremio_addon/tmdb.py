@@ -87,7 +87,7 @@ class TMDB:
         ids = {}
         for title in queries:
             for language in ('he-IL', 'en-US'):
-                data = await self.get('/search/tv', query=title, language=language, include_adult='false')
+                data = await self.get('/search/tv', query=title, language=language, include_adult='true')
                 for item in data.get('results', [])[:5]:
                     if len(ids) < 10:
                         ids[item['id']] = item
