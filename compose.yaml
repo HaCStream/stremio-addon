@@ -3,6 +3,7 @@ services:
     build: .
     env_file: .env
     environment:
+      DEBUG_LEVEL: ${DEBUG_LEVEL:-INFO}
       DEV_UI_HOST: ${DEV_UI_HOST:-0.0.0.0}
     ports:
       - "127.0.0.1:8000:8000"

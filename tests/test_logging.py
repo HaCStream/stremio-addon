@@ -27,7 +27,7 @@ configure_logging()
 logging.getLogger('stremio_addon.telegram').info('Sync started')
 logging.getLogger('stremio_addon.interactions').info('Search completed')
 logging.getLogger('uvicorn.error').info('Application startup complete')
-logging.getLogger('telethon').warning('Hidden transport details')
+logging.getLogger('telethon').debug('Hidden transport details')
 '''], capture_output=True, text=True, check=True)
     lines = result.stdout.splitlines()
     assert len(lines) == 3
@@ -35,3 +35,25 @@ logging.getLogger('telethon').warning('Hidden transport details')
     assert 'INFO: stremio_addon.interactions: Search completed' in lines[1]
     assert 'INFO: uvicorn.server: Application startup complete' in lines[2]
     assert result.stderr == ''
+
+
+@pytest.mark.parametrize('level', ['INFO', 'DEBUG', 'WARNING'])
+def test_configured_levels(level):
+    result = subprocess.run([sys.executable, '-c', f"""
+import logging
+from stremio_addon.logging_setup import configure_logging
+configure_logging('{level}')
+log = logging.getLogger('addon.test')
+log.debug('details')
+log.info('routine')
+log.warning('warning')
+log.error('error')
+logging.getLogger('telethon').warning('transport warning')
+logging.getLogger('httpx').info('request detail')
+"""], capture_output=True, text=True, check=True)
+    assert ('details' in result.stdout) == (level == 'DEBUG')
+    assert ('routine' in result.stdout) == (level != 'WARNING')
+    assert 'WARNING: addon.test: warning' in result.stdout
+    assert 'ERROR: addon.test: error' in result.stdout
+    assert 'transport warning' in result.stdout
+    assert ('request detail' in result.stdout) == (level == 'DEBUG')

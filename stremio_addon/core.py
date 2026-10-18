@@ -115,6 +115,7 @@ class Settings:
     require_ai_suffix_for_ai_search: bool = True
     tmdb_api_key: str = ''
     display_collection: bool = False
+    debug_level: str = "INFO"
 
     @classmethod
     def env(cls):
@@ -185,12 +186,15 @@ class Settings:
         gemini_key = get('GEMINI_API_KEY') if ai_enabled else ''
         if ai_enabled and not gemini_key:
             raise ValueError('GEMINI_API_KEY is required when AI_SEARCH_ENABLED is true')
+        debug_level = get('DEBUG_LEVEL', 'INFO').upper()
+        if debug_level not in ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'):
+            raise ValueError('DEBUG_LEVEL must be DEBUG, INFO, WARNING, ERROR or CRITICAL')
         return cls(port, url, key, int(get('TELEGRAM_APP_API_ID')), get('TELEGRAM_APP_API_HASH'), get('USER_SESSION_STRING'),
                    Path(get('DATA_DIR', default_data)), int(get('CACHE_MB', '512')) * 1024**2,
                    channel_ids, debug_port, debug_host, debug_enabled, ai_enabled, gemini_key,
                    skip_debug_auth, ai_suffix,
                    str(os.getenv('TMDB_API_KEY') or options.get('TMDB_API_KEY') or '').strip(),
-                   display_collection=boolean('DISPLAY_COLLECTION'))
+                   display_collection=boolean('DISPLAY_COLLECTION'), debug_level=debug_level)
 
 
 class Tokens:

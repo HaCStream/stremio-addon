@@ -511,6 +511,8 @@ async def test_matching(tmp_path):
 
 
 def test_interaction_logs(tmp_path, caplog):
+    import logging
+    caplog.set_level(logging.INFO, logger="stremio_addon.interactions")
     import json
     key = 'a' * 32
     cfg = Settings(8000, 'https://example.com', key, 1, 'private-hash', 'private-session', tmp_path)

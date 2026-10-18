@@ -1,4 +1,20 @@
-# Search and result logs
+# Logging and watchdog diagnostics
+
+`DEBUG_LEVEL` defaults to `INFO` in Docker and Home Assistant. Accepted levels:
+`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` (case insensitive in environment variables).
+Restart after changing it. INFO keeps lifecycle, sync summaries and interactions;
+DEBUG adds history batches, individual TMDB matches and HTTP transport detail.
+Library warnings and errors remain visible at INFO. Server failures use ERROR,
+client failures use WARNING. Raising the threshold intentionally hides lower levels.
+
+A separate thread reports event-loop stalls longer than two seconds, including
+file/function/line stacks without source text or locals, and reports recovery.
+Shutdown logs identify SIGTERM/SIGINT. Failed container probes report elapsed time
+and exception class in Docker health history and, where permitted, container stdout.
+Use these logs alongside Supervisor timestamps; they do not establish a root cause
+until a failure is captured. Health checks still exercise the real API event loop.
+
+## Search and result logs
 
 Interaction summaries are enabled by default at INFO level and appear in the
 Home Assistant add-on log or `docker compose logs -f addon`.
@@ -27,7 +43,7 @@ Example:
 {"event":"catalog_search","query":"שם הסרט","type":"movie","catalog":"telegram","result_count":2,"skip":0,"channel_count":1,"sample_titles":["שם הסרט","שם הסרט"],"status":200,"duration_ms":3.2}
 ```
 
-Zero results are logged too. HTTP errors use WARNING level. Unexpected failures
+Zero results are logged too. HTTP 4xx errors use WARNING and 5xx errors use ERROR. Unexpected failures
 record the exception class without the exception message in the interaction
 summary. Health checks and unauthorized requests do not emit interaction logs.
 

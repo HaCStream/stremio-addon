@@ -134,6 +134,7 @@ class Telegram:
         # Ascending catch-up advances the high-water mark only after each persisted message.
         if p['newest']:
             async for message in self.client.iter_messages(entity, min_id=p['newest'], reverse=True):
+                await asyncio.sleep(0)
                 self.index(channel, message)
                 p['newest'] = message.id
                 self.store.save_checkpoint(p)
@@ -143,6 +144,7 @@ class Telegram:
         if not p['complete']:
             batch = await self.client.get_messages(entity, limit=100, offset_id=p['oldest'])
             for message in batch:
+                await asyncio.sleep(0)
                 self.index(channel, message)
                 p['oldest'] = message.id
                 p['newest'] = max(p['newest'], message.id)
@@ -151,7 +153,7 @@ class Telegram:
                 p['complete'] = 1
                 self.store.save_checkpoint(p)
             if self.sync_status['state'] == 'running':
-                logger.info('Sync history batch: channel=%s messages=%s oldest=%s complete=%s',
+                logger.debug('Sync history batch: channel=%s messages=%s oldest=%s complete=%s',
                             channel, len(batch), p['oldest'], bool(p['complete']))
 
     async def reconcile(self):
@@ -170,6 +172,7 @@ class Telegram:
             messages = await self.client.get_messages(entity, ids=[r['message'] for r in group])
             for row, message in zip(group, messages):
                 if message and not isinstance(message, types.MessageEmpty):
+                    await asyncio.sleep(0)
                     self.index(channel, message)
                 else:
                     self.store.delete(row['id'])

@@ -1,4 +1,7 @@
 configuration:
+  DEBUG_LEVEL:
+    name: Log level
+    description: Choose INFO for routine logs or DEBUG for detailed diagnostics. Warnings and errors retain their severity.
   ADDON_URL:
     name: Addon URL
     description: >-

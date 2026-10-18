@@ -20,8 +20,14 @@ class LogFormatter(logging.Formatter):
         return re.sub(r'(?i)(api_key=)[^&\s\"\']+', r'\1[redacted]', super().format(record))
 
 
-def configure_logging():
+def configure_logging(level="INFO"):
+    level = str(level).upper()
+    if level not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+        raise ValueError("Invalid DEBUG_LEVEL")
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(LogFormatter())
-    logging.basicConfig(level=logging.INFO, handlers=[handler])
-    logging.getLogger('telethon').setLevel(logging.CRITICAL)
+    logging.basicConfig(level=level, handlers=[handler])
+    logging.getLogger().setLevel(level)
+    for name in ("httpx", "httpcore"):
+        logging.getLogger(name).setLevel(logging.DEBUG if level == "DEBUG" else logging.WARNING)
+    logging.getLogger('telethon').setLevel(logging.DEBUG if level == 'DEBUG' else logging.WARNING)
