@@ -652,9 +652,9 @@ async def test_history_restart_checkpoint(tmp_path):
     class Client:
         async def get_messages(self, entity, limit, offset_id):
             return [m for m in messages if not offset_id or m.id < offset_id][:limit]
-        async def iter_messages(self, entity, min_id, reverse):
+        async def iter_messages(self, entity, min_id, reverse, max_id):
             for message in sorted(messages, key=lambda m: m.id):
-                if message.id > min_id:
+                if min_id < message.id < max_id:
                     yield message
     gateway.client = Client()
     await gateway.scan(123, None)
@@ -765,13 +765,16 @@ async def test_sync_scans_each_channel_once_and_resumes_history(tmp_path, flood)
     flood_pending = flood
 
     class Client:
-        async def iter_messages(self, entity, min_id, reverse):
-            catch_ups.append((entity, min_id))
+        async def iter_messages(self, entity, min_id, reverse, max_id):
+            assert max_id == 307
             if entity == 2 and min_id == 305:
                 yield SimpleNamespace(id=306)
 
         async def get_messages(self, entity, limit, offset_id):
             nonlocal flood_pending
+            if limit == 1:
+                catch_ups.append((entity, store.checkpoint(entity)['newest']))
+                return [SimpleNamespace(id=10 if entity == 1 else 306)]
             assert entity == 2, 'Completed channels must not be scanned again'
             if flood_pending:
                 flood_pending = False
@@ -994,3 +997,4 @@ def test_dev_ui_password_environment(monkeypatch, password):
     if password is not None:
         monkeypatch.setenv('DEV_UI_PASSWORD', password)
     assert core.Settings.env().dev_ui_password == (password or '')
+

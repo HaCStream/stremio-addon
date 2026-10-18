@@ -117,6 +117,7 @@ class Settings:
     display_collection: bool = False
     debug_level: str = "INFO"
     dev_ui_password: str = ''
+    scan_interval_seconds: int = 300
 
     @classmethod
     def env(cls):
@@ -190,12 +191,19 @@ class Settings:
         debug_level = get('DEBUG_LEVEL', 'INFO').upper()
         if debug_level not in ('NOTSET', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'):
             raise ValueError('DEBUG_LEVEL must be NOTSET, DEBUG, INFO, WARNING, ERROR or CRITICAL')
+        try:
+            scan_interval = int(get('SCAN_INTERVAL_SECONDS', '300'))
+            if scan_interval < 1:
+                raise ValueError()
+        except ValueError as exc:
+            raise ValueError('SCAN_INTERVAL_SECONDS must be a positive integer') from exc
         return cls(port, url, key, int(get('TELEGRAM_APP_API_ID')), get('TELEGRAM_APP_API_HASH'), get('USER_SESSION_STRING'),
                    Path(get('DATA_DIR', default_data)), int(get('CACHE_MB', '512')) * 1024**2,
                    channel_ids, debug_port, debug_host, debug_enabled, ai_enabled, gemini_key,
                    skip_debug_auth, ai_suffix,
                    str(os.getenv('TMDB_API_KEY') or options.get('TMDB_API_KEY') or '').strip(),
                    display_collection=boolean('DISPLAY_COLLECTION'), debug_level=debug_level,
+                   scan_interval_seconds=scan_interval,
                    dev_ui_password=str(os.getenv('DEV_UI_PASSWORD') or options.get('DEV_UI_PASSWORD') or '').strip())
 
 
@@ -427,6 +435,7 @@ class Store:
     def save_checkpoint(self, p):
         with self.db:
             self.db.execute('INSERT OR REPLACE INTO checkpoints VALUES (:channel,:oldest,:newest,:complete)', p)
+
 
 
 
