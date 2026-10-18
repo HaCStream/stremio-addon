@@ -139,6 +139,7 @@ def create_debug_app(runtime):
         shared = app.state.runtime
         return {
             'version': get_version(),
+            'install_url': f'{shared.cfg.url.rstrip("/")}/{shared.cfg.key}/manifest.json',
             'connected': shared.tg.client.is_connected(),
             'phase': shared.tg.status.get('phase'),
             'last_error': shared.tg.status.get('last_error'),

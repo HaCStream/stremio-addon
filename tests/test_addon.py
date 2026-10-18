@@ -391,6 +391,7 @@ def test_debug_dashboard_is_read_only_and_shows_queried_channels(tmp_path):
         overview = client.get('/api/overview', headers=headers).json()
         assert overview['debug_port'] == 9123
         assert overview['videos'] == 1
+        assert overview['install_url'] == f'{cfg.url}/{cfg.key}/manifest.json'
         response = client.get('/api/search', params={'q': 'שם', 'mode': 'text'},
                               headers=headers)
         assert response.status_code == 200
