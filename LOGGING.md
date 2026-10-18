@@ -1,7 +1,9 @@
 # Logging and watchdog diagnostics
 
 `DEBUG_LEVEL` defaults to `INFO` in Docker and Home Assistant. Accepted levels:
-`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` (case insensitive in environment variables).
+`NOTSET`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` (case insensitive in environment variables).
+NOTSET removes the root logging threshold and enables detailed library diagnostics.
+Home Assistant displays these six choices in a dropdown.
 Restart after changing it. INFO keeps lifecycle, sync summaries and interactions;
 DEBUG adds history batches, individual TMDB matches and HTTP transport detail.
 Library warnings and errors remain visible at INFO. Server failures use ERROR,

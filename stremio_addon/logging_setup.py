@@ -22,12 +22,12 @@ class LogFormatter(logging.Formatter):
 
 def configure_logging(level="INFO"):
     level = str(level).upper()
-    if level not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+    if level not in ("NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
         raise ValueError("Invalid DEBUG_LEVEL")
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(LogFormatter())
     logging.basicConfig(level=level, handlers=[handler])
     logging.getLogger().setLevel(level)
     for name in ("httpx", "httpcore"):
-        logging.getLogger(name).setLevel(logging.DEBUG if level == "DEBUG" else logging.WARNING)
-    logging.getLogger('telethon').setLevel(logging.DEBUG if level == 'DEBUG' else logging.WARNING)
+        logging.getLogger(name).setLevel(logging.DEBUG if level in ("NOTSET", "DEBUG") else logging.WARNING)
+    logging.getLogger('telethon').setLevel(logging.DEBUG if level in ('NOTSET', 'DEBUG') else logging.WARNING)
