@@ -132,10 +132,10 @@ generated descriptions without removing Telegram entries, and reclaims database
 space. The new catalogs may require reinstalling or refreshing the addon in your
 client. Google Search grounding uses your Gemini project's quota and billing.
 The Developer UI is available through the host port mapped to 8001. Sign in with the
-configured API key to inspect channels, indexing progress, recent searches, and
+`DEV_UI_PASSWORD` (or `ADDON_ACCESS_KEY` when the password is blank) to inspect channels, indexing progress, recent searches, and
 read-only search results. It does not expose playback URLs and does not use
 `ADDON_URL` for its own requests.
-Set `SKIP_DEV_UI_AUTH: true` under the Developer UI options to open without a key. Keep
+Set `SKIP_DEV_UI_AUTH: true` under the Developer UI options to open without a password. Keep
 dashboard network access restricted when using this option. The Stremio API key
 is still required for addon endpoints.
 The add-on page's **Open Web UI** button opens the dashboard on its standard

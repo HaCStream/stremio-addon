@@ -116,6 +116,7 @@ class Settings:
     tmdb_api_key: str = ''
     display_collection: bool = False
     debug_level: str = "INFO"
+    dev_ui_password: str = ''
 
     @classmethod
     def env(cls):
@@ -194,7 +195,8 @@ class Settings:
                    channel_ids, debug_port, debug_host, debug_enabled, ai_enabled, gemini_key,
                    skip_debug_auth, ai_suffix,
                    str(os.getenv('TMDB_API_KEY') or options.get('TMDB_API_KEY') or '').strip(),
-                   display_collection=boolean('DISPLAY_COLLECTION'), debug_level=debug_level)
+                   display_collection=boolean('DISPLAY_COLLECTION'), debug_level=debug_level,
+                   dev_ui_password=str(os.getenv('DEV_UI_PASSWORD') or options.get('DEV_UI_PASSWORD') or '').strip())
 
 
 class Tokens:

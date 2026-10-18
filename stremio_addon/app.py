@@ -36,7 +36,7 @@ def stream_labels(row):
 
 def safe_log_text(value, cfg):
     text = str(value)
-    for secret in (cfg.key, cfg.session, cfg.api_hash, cfg.gemini_api_key, cfg.tmdb_api_key):
+    for secret in (cfg.key, cfg.dev_ui_password, cfg.session, cfg.api_hash, cfg.gemini_api_key, cfg.tmdb_api_key):
         if secret:
             text = text.replace(secret, '[redacted]')
     text = re.sub(r'https?://\S+|/(?:play|thumb)/\S+', '[url]', text)

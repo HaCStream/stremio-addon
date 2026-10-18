@@ -39,6 +39,7 @@ options:
   developer_ui:
     DEV_UI_ENABLED: false
     SKIP_DEV_UI_AUTH: false
+    DEV_UI_PASSWORD: ""
 schema:
   DEBUG_LEVEL: list(DEBUG|INFO|WARNING|ERROR|CRITICAL)
   ADDON_URL: url
@@ -58,3 +59,4 @@ schema:
   developer_ui:
     DEV_UI_ENABLED: bool
     SKIP_DEV_UI_AUTH: bool
+    DEV_UI_PASSWORD: password?

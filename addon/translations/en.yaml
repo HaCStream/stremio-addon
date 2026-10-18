@@ -70,10 +70,13 @@ configuration:
       DEV_UI_ENABLED:
         name: Enable Developer UI
         description: Allow access to the dashboard and its search and sync tools.
+      DEV_UI_PASSWORD:
+        name: Developer UI password
+        description: Optional custom login password. Leave blank to use the addon access key. Ignored when authentication is skipped.
       SKIP_DEV_UI_AUTH:
         name: Skip Developer UI authentication
         description: >-
-          Open the Developer UI without entering the addon access key. Anyone who can reach
+          Open the Developer UI without entering a password. Anyone who can reach
           the dashboard can view its data, search the index, and request a sync.
 network:
   8000/tcp: Stremio addon endpoint.

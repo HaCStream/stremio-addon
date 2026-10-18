@@ -48,7 +48,7 @@ const apiKey='test-key';
   response=new Response('null',{status:500});
   await assert.rejects(api('/api/overview'),/Request failed.*HTTP 500/);
   response=new Response('Unauthorized',{status:401});
-  await assert.rejects(api('/api/overview'),/Invalid API key/);
+  await assert.rejects(api('/api/overview'),/Invalid Developer UI password/);
 })().catch(error=>{console.error(error);process.exitCode=1});
 """
     subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)

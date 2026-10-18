@@ -63,13 +63,14 @@ def create_debug_app(runtime):
     def authorize(key):
         if app.state.runtime.cfg.skip_debug_auth:
             return
-        expected = app.state.runtime.cfg.key
+        expected = app.state.runtime.cfg.dev_ui_password or app.state.runtime.cfg.key
         if not key or not hmac.compare_digest(key.encode(), expected.encode()):
-            raise HTTPException(401, 'Invalid API key')
+            raise HTTPException(401, 'Invalid Developer UI password')
 
     def safe_text(value):
         text = str(value)
-        for secret in (app.state.runtime.cfg.key, app.state.runtime.cfg.session,
+        for secret in (app.state.runtime.cfg.key, app.state.runtime.cfg.dev_ui_password,
+                       app.state.runtime.cfg.session,
                        app.state.runtime.cfg.api_hash, app.state.runtime.cfg.gemini_api_key,
                        app.state.runtime.cfg.tmdb_api_key):
             if secret:
@@ -86,7 +87,8 @@ def create_debug_app(runtime):
         if isinstance(value, list):
             return [redact_diagnostics(v) for v in value]
         if isinstance(value, str):
-            for secret in (app.state.runtime.cfg.key, app.state.runtime.cfg.session,
+            for secret in (app.state.runtime.cfg.key, app.state.runtime.cfg.dev_ui_password,
+                           app.state.runtime.cfg.session,
                            app.state.runtime.cfg.api_hash, app.state.runtime.cfg.gemini_api_key,
                            app.state.runtime.cfg.tmdb_api_key):
                 if secret:
