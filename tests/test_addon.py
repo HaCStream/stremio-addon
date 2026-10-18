@@ -908,3 +908,56 @@ def test_dev_ui_auth_mode_is_rendered_by_server(tmp_path, skip_auth):
         assert cfg.key not in html
         assert cfg.session not in html
         assert cfg.api_hash not in html
+
+
+
+@pytest.mark.asyncio
+async def test_prune_channels_batched_preserves_active_data_and_checkpoints(tmp_path):
+    import asyncio
+    store = Store(tmp_path / 'db')
+    for i in range(12):
+        store.upsert(row(id=f'tg:-1:{i}', channel=-1, message=i))
+    store.upsert(row(id='tg:-2:7', channel=-2, caption='retained'))
+    for channel in (-1, -2, -3):
+        store.save_checkpoint(dict(channel=channel, oldest=1, newest=7, complete=1))
+    assert store.stored_channels() == {-1, -2, -3}
+    ticks = []
+    async def heartbeat():
+        for _ in range(4):
+            await asyncio.sleep(0)
+            ticks.append(True)
+    await asyncio.gather(store.prune_channels({-1, -3}, batch_size=3), heartbeat())
+    assert len(ticks) == 4
+    assert [r['id'] for r in store.catalog()] == ['tg:-2:7']
+    assert [r[0] for r in store.db.execute('SELECT id FROM search')] == ['tg:-2:7']
+    assert store.checkpoint(-1)['complete'] == 0
+    assert store.checkpoint(-3)['complete'] == 0
+    assert store.checkpoint(-2)['complete'] == 1
+    assert store.catalog('retained')
+    plan = store.db.execute('EXPLAIN QUERY PLAN SELECT rowid FROM videos WHERE channel=? LIMIT 500', (-1,)).fetchall()
+    assert any('videos_channel' in r[3] for r in plan)
+    store.db.close()
+
+
+@pytest.mark.asyncio
+async def test_discovery_after_restart_cleans_removed_channels_once(tmp_path):
+    store = Store(tmp_path / 'db')
+    store.upsert(row())
+    store.save_checkpoint(dict(channel=-100123, oldest=1, newest=7, complete=1))
+    cfg = Settings(8000, 'http://localhost', 'a'*32, 1, 'hash', '', tmp_path)
+    gateway = Telegram(cfg, store)
+    # Empty discovery removes persisted data even on the first discovery.
+    class Client:
+        async def iter_dialogs(self):
+            if False:
+                yield
+    gateway.client = Client()
+    await gateway.discover()
+    assert not store.catalog()
+    assert not store.db.execute('SELECT * FROM search').fetchall()
+    async def unexpected_cleanup(*args):
+        raise AssertionError('unchanged discovery must skip cleanup')
+    store.prune_channels = unexpected_cleanup
+    store.stored_channels = lambda: (_ for _ in ()).throw(AssertionError('must only read stored channels once'))
+    await gateway.discover()
+    store.db.close()

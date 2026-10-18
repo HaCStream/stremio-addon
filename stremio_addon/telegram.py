@@ -20,6 +20,7 @@ class Telegram:
         self.channel_ids = settings.channel_ids
         self.client = TelegramClient(StringSession(settings.session), settings.api_id, settings.api_hash, flood_sleep_threshold=30)
         self.channels = {}
+        self.known_channels = None
         self.status = {'phase': 'connecting', 'last_error': None}
         self.cache = settings.data / 'chunks'
         self.cache.mkdir(exist_ok=True)
@@ -93,14 +94,13 @@ class Telegram:
                 if self.channel_ids is None or channel_id in self.channel_ids:
                     channels[channel_id] = entity
         self.channels = channels
-        for row in self.store.db.execute('SELECT id,channel FROM videos').fetchall():
-            if row['channel'] not in channels:
-                self.store.delete(row['id'])
-        # Removed entries must be rescanned if the channel is selected again.
-        with self.store.db:
-            for row in self.store.db.execute('SELECT channel FROM checkpoints').fetchall():
-                if row['channel'] not in channels:
-                    self.store.db.execute('DELETE FROM checkpoints WHERE channel=?', (row['channel'],))
+        if self.known_channels is None:
+            self.known_channels = self.store.stored_channels()
+        removed = self.known_channels - channels.keys()
+        if removed:
+            logger.info('Removing unavailable channels from index: channels=%s', len(removed))
+            await self.store.prune_channels(removed)
+        self.known_channels = set(channels)
 
     def index(self, channel, message):
         item = f'tg:{channel}:{message.id}'
@@ -211,8 +211,9 @@ class Telegram:
                     except (errors.ChannelPrivateError, errors.ChannelInvalidError):
                         logger.warning('Sync skipped inaccessible channel: id=%s', channel)
                         self.channels.pop(channel, None)
-                        for r in self.store.db.execute('SELECT id FROM videos WHERE channel=?', (channel,)).fetchall():
-                            self.store.delete(r['id'])
+                        await self.store.prune_channels({channel})
+                        if self.known_channels is not None:
+                            self.known_channels.discard(channel)
                     await asyncio.sleep(.2)
                 incomplete = any(not self.store.checkpoint(c)['complete'] for c in self.channels)
                 # Reconciliation re-fetches indexed messages; leave it to background passes.
@@ -305,3 +306,4 @@ class Telegram:
             data = await self.chunk(row, message, offset)
             yield data[max(0, start - offset): min(len(data), end - offset + 1)]
             offset += CHUNK
+
