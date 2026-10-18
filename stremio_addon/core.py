@@ -410,21 +410,6 @@ class Store:
         return [dict(row) for row in rows
                 if normalize(title) in {normalize(alias) for alias in title_aliases(dict(row))}]
 
-    def cleanup_ai_data(self):
-        # Legacy tables are never recreated. Reclaim their pages and clear WAL
-        # content so embedding blobs do not remain in the database files.
-        removed = {}
-        self.db.execute('PRAGMA secure_delete=ON')
-        with self.db:
-            for table in ('ai_embeddings', 'ai_descriptions'):
-                exists = self.db.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
-                removed[table] = self.db.execute('SELECT count(*) FROM ' + table).fetchone()[0] if exists else 0
-                self.db.execute('DROP TABLE IF EXISTS ' + table)
-        self.db.execute('VACUUM')
-        self.db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
-        return removed
-
     def explicit(self, imdb):
         return [dict(r) for r in self.db.execute('SELECT v.*, COALESCE(m.imdb,v.imdb) AS mapped FROM videos v LEFT JOIN mappings m ON m.id=v.id WHERE COALESCE(m.imdb,v.imdb)=?', (imdb,))]
 

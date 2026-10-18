@@ -114,7 +114,7 @@ Gemini uses Google Search to find up to five movie titles and five series titles
 
 No embeddings, description enrichment, or background AI indexing are generated. Only your search description is sent to Gemini; indexed titles, captions, Telegram credentials, channel IDs, playback URLs, and video bytes are not sent. Google Search grounding may have its own cost and quota in your Gemini project.
 
-The Developer UI retains an AI search form with separate Movies and Series results. **Cleanup** permanently removes legacy embeddings and AI-generated descriptions, drops their old tables, and reclaims database space. Telegram videos, search entries, checkpoints, mappings, and credentials are preserved. Cleanup also works when AI search is disabled, and can be repeated safely.
+The Developer UI retains an AI search form with separate Movies and Series results.
 
 If Gemini returns HTTP 429, the addon pauses Gemini requests with a saved, increasing cooldown that survives restarts. The Developer UI search displays failures and cooldown errors. The AI catalogs return no results during failures rather than substituting unrelated text matches; ordinary Telegram search remains available.
 

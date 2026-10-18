@@ -127,9 +127,7 @@ description. This applies to both AI catalogs and Developer UI AI search. Set th
 to `false` to allow AI searches without the suffix; a supplied suffix is still
 stripped.
 No background AI indexing or embeddings are generated. The Developer UI search displays
-separate movie and series matches. **Cleanup** removes legacy embeddings and
-generated descriptions without removing Telegram entries, and reclaims database
-space. The new catalogs may require reinstalling or refreshing the addon in your
+separate movie and series matches. The new catalogs may require reinstalling or refreshing the addon in your
 client. Google Search grounding uses your Gemini project's quota and billing.
 The Developer UI is available through the host port mapped to 8001. Sign in with the
 `DEV_UI_PASSWORD` (or `ADDON_ACCESS_KEY` when the password is blank) to inspect channels, indexing progress, recent searches, and

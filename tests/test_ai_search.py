@@ -218,30 +218,6 @@ async def test_invalid_response(tmp_path, answer):
     store.db.close()
 
 
-def test_debug_cleanup_and_no_embedding_state(tmp_path):
-    from stremio_addon.debug import create_debug_app
-    cfg = config(tmp_path)
-    runtime = Runtime(cfg, FakeTelegram)
-    with TestClient(create_debug_app(runtime)) as client:
-        headers = {'X-Debug-Key': cfg.key}
-        assert client.post('/api/cleanup').status_code == 401
-        assert 'ai_index' not in client.get('/api/overview', headers=headers).json()
-        with runtime.store.db:
-            runtime.store.db.executescript("""CREATE TABLE ai_embeddings(id TEXT, vector BLOB);
-                INSERT INTO ai_embeddings VALUES ('legacy', X'01020304');
-                CREATE TABLE ai_descriptions(title_key TEXT, description TEXT);
-                INSERT INTO ai_descriptions VALUES ('legacy', 'old description');""")
-        result = client.post('/api/cleanup', headers=headers).json()
-        assert result['removed_records'] == 2
-        assert client.post('/api/cleanup', headers=headers).json()['removed_records'] == 0
-        assert runtime.store.get('tg:-100:1')
-        assert runtime.store.catalog('Groundhog')
-        assert not runtime.store.db.execute("SELECT name FROM sqlite_master WHERE name IN ('ai_embeddings','ai_descriptions')").fetchall()
-        html = client.get('/').text
-        assert 'AI indexed' not in html and 'ai_index' not in html and 'AI index' not in html
-        assert 'ai-search-form' in html and 'id="cleanup"' in html
-
-
 @pytest.mark.parametrize('suffix_required', [True, False])
 def test_debug_ai_search(tmp_path, suffix_required):
     from stremio_addon.debug import create_debug_app
@@ -271,7 +247,7 @@ def test_debug_ai_search(tmp_path, suffix_required):
         assert 'private upstream' not in response.text
 
 
-def test_disabled_ai_and_cleanup(tmp_path):
+def test_disabled_ai(tmp_path):
     from stremio_addon.debug import create_debug_app
     cfg = Settings(8000, 'https://example.com', 'a' * 32, 1, 'hash', 'session', tmp_path)
     runtime = Runtime(cfg, FakeTelegram)
@@ -280,7 +256,6 @@ def test_disabled_ai_and_cleanup(tmp_path):
     with TestClient(create_debug_app(runtime)) as client:
         headers = {'X-Debug-Key': cfg.key}
         assert client.get('/api/search?mode=ai&q=anything', headers=headers).status_code == 409
-        assert client.post('/api/cleanup', headers=headers).status_code == 200
 
 
 @pytest.mark.asyncio
