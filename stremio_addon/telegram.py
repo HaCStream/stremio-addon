@@ -33,6 +33,16 @@ class Telegram:
         self.reconcile_cursor = ''
         self.scan_interval_seconds = settings.scan_interval_seconds
         self.pending_channels = set()
+        self.history_remaining = {}
+        self.new_remaining = {}
+
+    def queue(self, channel):
+        """Estimated pending messages; ID gaps are included until scanning finishes."""
+        point = self.store.checkpoint(channel)
+        history = (0 if point['complete'] else self.history_remaining.get(
+            channel, max(0, point['oldest'] - 1) if point['oldest'] else None))
+        newer = self.new_remaining.get(channel)
+        return None if history is None or newer is None else history + newer
 
     async def start(self):
         await self.client.connect()
@@ -96,6 +106,8 @@ class Telegram:
                 if self.channel_ids is None or channel_id in self.channel_ids:
                     channels[channel_id] = entity
         self.channels = channels
+        self.history_remaining = {c: n for c, n in self.history_remaining.items() if c in channels}
+        self.new_remaining = {c: n for c, n in self.new_remaining.items() if c in channels}
         if self.known_channels is None:
             self.known_channels = self.store.stored_channels()
         removed = self.known_channels - channels.keys()
@@ -137,6 +149,7 @@ class Telegram:
 
     async def scan_new_messages(self, channel, entity):
         p = self.store.checkpoint(channel)
+        self.new_remaining[channel] = None
         if p['newest']:
             self.scan_phase()
             # Freeze the target: a busy group cannot extend this catch-up forever.
@@ -146,18 +159,21 @@ class Telegram:
                 history_pending = channel in self.pending_channels
                 self.pending_channels.add(channel)
                 self.scan_phase()
+                self.new_remaining[channel] = target - p['newest']
                 async for message in self.client.iter_messages(
                         entity, min_id=p['newest'], max_id=target + 1, reverse=True):
                     await asyncio.sleep(0)
                     self.index(channel, message)
                     p['newest'] = message.id
                     self.store.save_checkpoint(p)
+                    self.new_remaining[channel] = max(0, target - message.id)
                 # The iterator reached its fixed target (including deleted-ID gaps).
                 p['newest'] = target
                 self.store.save_checkpoint(p)
                 if not history_pending:
                     self.pending_channels.discard(channel)
                 self.scan_phase()
+        self.new_remaining[channel] = 0
 
     async def scan_history(self, channel, entity):
         p = self.store.checkpoint(channel)
@@ -166,6 +182,7 @@ class Telegram:
             # One look-ahead message proves a backlog remains after this batch.
             batch = await self.client.get_messages(entity, limit=101, offset_id=p['oldest'])
             if batch:
+                self.history_remaining[channel] = max(0, batch[0].id)
                 self.pending_channels.add(channel)
                 self.scan_phase()
             for message in batch[:100]:
@@ -174,10 +191,12 @@ class Telegram:
                 p['oldest'] = message.id
                 p['newest'] = max(p['newest'], message.id)
                 self.store.save_checkpoint(p)
+                self.history_remaining[channel] = max(0, message.id - 1)
             if len(batch) <= 100:
                 p['complete'] = 1
                 self.store.save_checkpoint(p)
                 self.pending_channels.discard(channel)
+                self.history_remaining[channel] = 0
             self.scan_phase()
             logger.debug('History batch: channel=%s messages=%s oldest=%s complete=%s',
                          channel, min(len(batch), 100), p['oldest'], bool(p['complete']))

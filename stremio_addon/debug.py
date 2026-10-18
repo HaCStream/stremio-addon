@@ -106,8 +106,7 @@ def create_debug_app(runtime):
                 'id': channel,
                 'name': channel_title(entity, channel),
                 'videos': counts.get(channel, 0),
-                'oldest_message': point['oldest'],
-                'newest_message': point['newest'],
+                'queue': shared.tg.queue(channel),
                 'complete': bool(point['complete']),
                 'phase': ('indexing' if channel in getattr(shared.tg, 'pending_channels', set())
                           else 'ready' if point['complete'] else 'checking'),

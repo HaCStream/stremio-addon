@@ -96,3 +96,29 @@ async function load(){loads++;if(failure)throw Object.assign(Error('Request fail
 """
     script = script.replace('SKIP_AUTH', json.dumps(skip_auth))
     subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)
+
+
+def test_channel_queue_renders_zero_and_unknown():
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('Node is required to execute the Developer UI JavaScript')
+    html = (Path(__file__).parents[1] / 'stremio_addon' / 'debug.html').read_text()
+    render = 'function renderChannels(' + html.split('function renderChannels(', 1)[1].split('\nfunction renderActivity', 1)[0]
+    script = r"""
+const assert=require('node:assert/strict');
+const output={innerHTML:''};
+const document={querySelector:()=>output};
+const esc=v=>String(v??'');
+const phaseLabel=v=>v;
+""" + render + r"""
+renderChannels([{id:1,name:'Group',videos:42,queue:0,complete:true,phase:'ready'}]);
+assert.match(output.innerHTML,/<td>42<\/td><td>0<\/td>/);
+renderChannels([{id:1,name:'Group',videos:42,queue:null,phase:'checking'}]);
+assert.match(output.innerHTML,/<td>Checking…<\/td>/);
+renderChannels([]);
+assert.match(output.innerHTML,/colspan="5"/);
+"""
+    subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)
+    assert '<th>Newest</th>' not in html
+    assert '<th>Oldest</th>' not in html
+    assert 'x.newest_message' not in html

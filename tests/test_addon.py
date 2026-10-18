@@ -353,6 +353,8 @@ class FakeTelegram:
         return SimpleNamespace(document=SimpleNamespace(size=10))
     async def stream(self, row, message, start, end):
         yield b'0123456789'[start:end + 1]
+    def queue(self, channel):
+        return 0
     def request_sync(self):
         self.sync_requests += 1
         self.sync_status = {"id": "test-sync", "state": "queued", "error": None}
@@ -400,6 +402,10 @@ def test_debug_dashboard_is_read_only_and_shows_queried_channels(tmp_path):
         result = response.json()
         assert result['result_count'] == 1
         assert result['channels_queried'][0]['id'] == -100123
+        assert result['channels_queried'][0]['videos'] == 1
+        assert result['channels_queried'][0]['queue'] == 0
+        assert 'newest_message' not in result['channels_queried'][0]
+        assert 'oldest_message' not in result['channels_queried'][0]
         assert result['results_by_channel']['-100123'] == 1
         assert result['results'][0]['matched_by'] == 'full-text index'
         assert 'url' not in result['results'][0]
