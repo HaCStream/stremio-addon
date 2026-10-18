@@ -262,6 +262,7 @@ class Store:
         if 'series_id' not in columns:
             with self.db:
                 self.db.execute('ALTER TABLE videos ADD COLUMN series_id TEXT')
+        self.db.execute('CREATE INDEX IF NOT EXISTS videos_channel ON videos(channel)')
         self.db.execute('CREATE INDEX IF NOT EXISTS videos_series ON videos(series_id,season,episode)')
         self.db.commit()
         if self.db.execute('PRAGMA user_version').fetchone()[0] < 3:
@@ -294,6 +295,56 @@ class Store:
         with self.db:
             self.db.execute('DELETE FROM videos WHERE id=?', (item,))
             self.db.execute('DELETE FROM search WHERE id=?', (item,))
+
+    def stored_channels(self):
+        # Seek to each distinct channel using the index, rather than walking
+        # every video entry (SELECT DISTINCT still scans the covering index).
+        channels = set()
+        channel = self.db.execute('SELECT MIN(channel) FROM videos').fetchone()[0]
+        while channel is not None:
+            channels.add(channel)
+            channel = self.db.execute(
+                'SELECT MIN(channel) FROM videos WHERE channel>?', (channel,)).fetchone()[0]
+        channels.update(r[0] for r in self.db.execute('SELECT channel FROM checkpoints'))
+        return channels
+
+    async def prune_channels(self, channels, batch_size=500):
+        """Remove inaccessible channels in bounded transactions, yielding between batches."""
+        import asyncio
+
+        if not channels:
+            return
+        placeholders = ','.join('?' for _ in channels)
+        params = tuple(channels)
+        # FTS id is UNINDEXED. Walk its rowids once in bounded pages, instead
+        # of scanning the entire FTS table separately for every deleted video.
+        cursor = 0
+        while True:
+            rows = self.db.execute(
+                'SELECT rowid FROM search WHERE rowid>? ORDER BY rowid LIMIT ?',
+                (cursor, batch_size)).fetchall()
+            if not rows:
+                break
+            end = rows[-1][0]
+            with self.db:
+                self.db.execute(
+                    'DELETE FROM search WHERE rowid>? AND rowid<=? AND EXISTS '
+                    f'(SELECT 1 FROM videos WHERE videos.id=search.id AND channel IN ({placeholders}))',
+                    (cursor, end, *params))
+            cursor = end
+            await asyncio.sleep(0)
+        for channel in params:
+            while True:
+                with self.db:
+                    removed = self.db.execute(
+                        'DELETE FROM videos WHERE rowid IN '
+                        '(SELECT rowid FROM videos WHERE channel=? LIMIT ?)',
+                        (channel, batch_size)).rowcount
+                if not removed:
+                    break
+                await asyncio.sleep(0)
+            with self.db:
+                self.db.execute('DELETE FROM checkpoints WHERE channel=?', (channel,))
 
     def get(self, item):
         row = self.db.execute('SELECT * FROM videos WHERE id=?', (item,)).fetchone()
@@ -374,5 +425,6 @@ class Store:
     def save_checkpoint(self, p):
         with self.db:
             self.db.execute('INSERT OR REPLACE INTO checkpoints VALUES (:channel,:oldest,:newest,:complete)', p)
+
 
 
