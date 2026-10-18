@@ -887,3 +887,22 @@ def test_display_collection_environment(tmp_path, monkeypatch, value, expected):
             core.Settings.env()
     else:
         assert core.Settings.env().display_collection is expected
+
+
+@pytest.mark.parametrize('skip_auth', [True, False])
+def test_dev_ui_auth_mode_is_rendered_by_server(tmp_path, skip_auth):
+    cfg = Settings(8000, 'https://example.com', 'private-key', 1, 'private-hash',
+                   'private-session', tmp_path, skip_debug_auth=skip_auth)
+    with TestClient(create_debug_app(Runtime(cfg, FakeTelegram))) as client:
+        response = client.get('/')
+        assert response.status_code == 200
+        assert response.headers['cache-control'] == 'private, no-store'
+        html = response.text
+        assert f'const skipAuth={str(skip_auth).lower()};' in html
+        assert f'id="login" class="login panel {"hidden" if skip_auth else ""}"' in html
+        assert f'id="app" class="{"" if skip_auth else "hidden"}"' in html
+        assert '__SKIP_DEV_UI_AUTH__' not in html
+        assert "api('/api/auth-config')" not in html
+        assert cfg.key not in html
+        assert cfg.session not in html
+        assert cfg.api_hash not in html
