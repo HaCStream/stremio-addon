@@ -235,3 +235,64 @@ async def test_playback_startup_gets_priority_but_thumbnail_lookup_does_not(tg):
     await tg.message(video())
     assert active == [1, 0]
     assert tg.playback_until == 0
+
+
+
+@pytest.mark.asyncio
+async def test_completed_channels_finish_before_any_history_backlog(tg):
+    tg.indexing_concurrency = 2
+    tg.channels = {1: 1, 2: 2, 3: 3, 4: 4}
+    for channel in (2, 4):
+        tg.store.save_checkpoint(dict(channel=channel, newest=20, oldest=1, complete=1))
+    finished = set()
+    async def process(channel, entity):
+        if channel in (1, 3):
+            assert {2, 4} <= finished
+        await asyncio.sleep(.01 if channel == 2 else 0)
+        finished.add(channel)
+    await tg.scan_channels(process)
+    assert finished == {1, 2, 3, 4}
+
+
+@pytest.mark.asyncio
+async def test_restarting_manual_sync_drains_sql_and_preserves_checkpoint(tg):
+    import threading
+    started, release = threading.Event(), threading.Event()
+    discoveries = []
+    restarted = asyncio.Event()
+    async def discover():
+        discoveries.append(True)
+        tg.channels = {1: 1}
+        if len(discoveries) == 2:
+            assert tg.store.checkpoint(1)['oldest'] == 100
+            restarted.set()
+            await asyncio.Event().wait()
+    def commit():
+        started.set()
+        assert release.wait(3)
+        tg.store.save_checkpoint(dict(channel=1, newest=200, oldest=100, complete=0))
+    async def scan(channel, entity):
+        await tg.store.run(commit)
+    tg.discover = discover
+    tg.scan_new_messages = AsyncMock()
+    tg.scan_history = scan
+    first = tg.request_sync()
+    task = asyncio.create_task(tg.run())
+    try:
+        async def wait_started():
+            while not started.is_set():
+                await asyncio.sleep(.001)
+        await asyncio.wait_for(wait_started(), 1)
+        second = tg.request_sync()
+        assert second['id'] != first['id']
+        assert tg.request_sync()['id'] == second['id']
+        await asyncio.sleep(.02)
+        assert len(discoveries) == 1
+        release.set()
+        await asyncio.wait_for(restarted.wait(), 1)
+        assert tg.sync_status == dict(second, state='running')
+    finally:
+        release.set()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task

@@ -49,3 +49,6 @@ between player requests. Already-running requests or database batches may finish
 Playback startup and video downloads do not wait for the background scan limiter.
 The pause applies at every concurrency setting; continuous playback can delay
 indexing and leave new videos unavailable until playback stops.
+
+
+🔄 **Sync now** restarts any running indexing cycle, keeping saved progress. Fully indexed channels and groups are refreshed first, then unfinished history scans resume. You can click it again while syncing to restart. Streaming keeps priority over indexing.

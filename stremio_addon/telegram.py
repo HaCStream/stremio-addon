@@ -31,6 +31,7 @@ class Telegram:
         self.download_slots = asyncio.Semaphore(4)
         self.chunk_cache = ChunkCache(self.cache, self.cache_limit)
         self.sync_requested = asyncio.Event()
+        self.restart_requested = asyncio.Event()
         self.sync_status = {"id": None, "state": "idle", "error": None}
         self.sync_started = None
         self.task = None
@@ -111,7 +112,15 @@ class Telegram:
                      channel, direction, len(messages), time.monotonic() - started)
 
     async def scan_channels(self, process):
-        channels = iter(list(self.channels.items()))
+        # Finish catch-up for fully indexed chats before starting any backlog work.
+        groups = ([], [])
+        for channel, entity in list(self.channels.items()):
+            groups[0 if self.store.checkpoint(channel)['complete'] else 1].append((channel, entity))
+        for group in groups:
+            await self._scan_channel_group(process, group)
+
+    async def _scan_channel_group(self, process, group):
+        channels = iter(group)
 
         async def worker():
             for channel, entity in channels:
@@ -119,13 +128,14 @@ class Telegram:
                 await process(channel, entity)
 
         tasks = [asyncio.create_task(worker()) for _ in
-                 range(min(self.indexing_concurrency, len(self.channels)))]
+                 range(min(self.indexing_concurrency, len(group)))]
         try:
             await asyncio.gather(*tasks)
         finally:
             # Drain siblings before retrying a pass, pruning, or closing SQLite.
             for task in tasks:
-                task.cancel()
+                if not task.cancelling():
+                    task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
 
     def queue(self, channel):
@@ -161,14 +171,15 @@ class Telegram:
         await self.client.disconnect()
 
     def request_sync(self):
-        """Wake the indexer and force channel discovery plus catch-up scans."""
-        if self.sync_status['state'] in ('queued', 'running'):
+        """Restart the indexer with fresh discovery and catch-up scans."""
+        if self.sync_status['state'] == 'queued':
             return dict(self.sync_status)
         if self.status['phase'] == 'unauthorized':
             raise RuntimeError('Telegram session revoked; restart with a valid session')
         self.sync_status = {'id': uuid4().hex, 'state': 'queued', 'error': None}
         self.sync_started = time.monotonic()
         self.sync_requested.set()
+        self.restart_requested.set()
         logger.info('Sync requested: id=%s', self.sync_status['id'])
         return dict(self.sync_status)
 
@@ -328,6 +339,27 @@ class Telegram:
         self.reconcile_cursor = rows[-1]['id']
 
     async def run(self):
+        try:
+            while True:
+                self.restart_requested.clear()
+                cycle = asyncio.create_task(self._run_cycles())
+                restart = asyncio.create_task(self.restart_requested.wait())
+                try:
+                    done, _ = await asyncio.wait((cycle, restart), return_when=asyncio.FIRST_COMPLETED)
+                    if cycle in done:
+                        await cycle
+                        return
+                    logger.info('Restarting indexing for requested sync: id=%s', self.sync_status['id'])
+                finally:
+                    # Drain channel workers and in-flight SQL before a replacement starts.
+                    cycle.cancel()
+                    restart.cancel()
+                    await asyncio.gather(cycle, restart, return_exceptions=True)
+        except asyncio.CancelledError:
+            self.finish_sync("Sync interrupted by shutdown")
+            raise
+
+    async def _run_cycles(self):
         discover_needed = True
         sync_id = None
         scanned_channels = set()
@@ -413,7 +445,6 @@ class Telegram:
                 self.status.update(phase='unauthorized', last_error='Telegram session revoked')
                 return
             except asyncio.CancelledError:
-                self.finish_sync("Sync interrupted by shutdown")
                 raise
             except Exception as exc:
                 self.finish_sync(type(exc).__name__)
@@ -499,4 +530,5 @@ class Telegram:
             for _, task in pending:
                 task.cancel()
             await asyncio.gather(*(task for _, task in pending), return_exceptions=True)
+
 

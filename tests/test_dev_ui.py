@@ -159,3 +159,34 @@ const handler=HANDLER
 })().catch(error=>{console.error(error);process.exitCode=1});
 """.replace('HANDLER', handler)
     subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)
+
+
+
+def test_sync_can_restart_and_old_poller_does_not_overwrite_new_status():
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('Node is required to execute the Developer UI JavaScript')
+    html = (Path(__file__).parents[1] / 'stremio_addon' / 'debug.html').read_text()
+    handler = html.split("document.querySelector('#sync').onclick=", 1)[1].split("document.querySelectorAll('.tab')", 1)[0]
+    script = r"""
+const assert=require('node:assert/strict');
+let syncAttempt=0,posts=0;
+const button={disabled:false},status={},timers=[];
+const document={querySelector:s=>s==='#sync'?button:status};
+const setTimeout=callback=>timers.push(callback);
+let api=async(path,options)=>({sync:options?{id:String(++posts),state:'queued'}:{id:String(posts),state:'done'}});
+const load=async()=>{};
+const handler=HANDLER
+(async()=>{
+ const first=handler();await Promise.resolve();
+ assert.equal(button.disabled,false);
+ const second=handler();await Promise.resolve();
+ assert.equal(posts,2);assert.equal(button.disabled,false);
+ timers.shift()();await first;
+ assert.equal(status.textContent,'Syncing...');assert.equal(status.className,'muted');
+ timers.shift()();await second;
+ assert.equal(status.textContent,'Sync done!');assert.equal(status.className,'ok');
+ assert.equal(button.disabled,false);
+})().catch(error=>{console.error(error);process.exitCode=1});
+""".replace('HANDLER', handler)
+    subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)
