@@ -46,16 +46,14 @@ async def test_catch_up_has_fixed_target_and_resumes_after_restart(gateway, tmp_
     class Client:
         target = 12
 
-        async def get_messages(self, entity, limit, offset_id):
-            assert gateway.status['phase'] == 'checking'
-            return [SimpleNamespace(id=self.target)]
-
-        async def iter_messages(self, entity, min_id, max_id, reverse):
+        async def get_messages(self, entity, limit, offset_id=0, min_id=0, max_id=0, reverse=False):
+            if not reverse:
+                assert gateway.status['phase'] == 'checking'
+                return [SimpleNamespace(id=self.target)]
             assert gateway.status['phase'] == 'indexing'
             # A newer arrival must wait for the next cycle.
-            for i in range(min_id + 1, 14):
-                if i < max_id:
-                    yield SimpleNamespace(id=i)
+            return [SimpleNamespace(id=i) for i in range(min_id + 1, 14)
+                    if i < max_id][:limit]
 
     gateway.client = Client()
     gateway.index = lambda channel, message: indexed.append(message.id)
@@ -182,14 +180,10 @@ class QueueClient:
     def __init__(self, messages):
         self.messages = sorted(messages, reverse=True)
 
-    async def get_messages(self, entity, limit, offset_id):
-        return [SimpleNamespace(id=i) for i in self.messages
-                if not offset_id or i < offset_id][:limit]
-
-    async def iter_messages(self, entity, min_id, max_id, reverse):
-        for i in sorted(self.messages):
-            if min_id < i < max_id:
-                yield SimpleNamespace(id=i)
+    async def get_messages(self, entity, limit, offset_id=0, min_id=0, max_id=0, reverse=False):
+        found = [i for i in self.messages if (not offset_id or i < offset_id)
+                 and i > min_id and (not max_id or i < max_id)]
+        return [SimpleNamespace(id=i) for i in sorted(found, reverse=not reverse)[:limit]]
 
 
 def enable_queue_counts(gateway, messages):
@@ -224,7 +218,7 @@ async def test_queue_estimates_include_id_gaps_and_reach_zero(gateway, tmp_path)
     gateway.client.messages = [40000, 30000] + gateway.client.messages
     observed.clear()
     await gateway.scan(1, 1)
-    assert observed == [19500, 10000]
+    assert observed == [19500, 19500]  # Progress advances after the whole page commits.
     assert gateway.queue(1) == 0
 
 
@@ -239,3 +233,4 @@ async def test_queue_with_empty_history_and_failed_check(gateway):
     with pytest.raises(ConnectionError):
         await gateway.scan_new_messages(1, 1)
     assert gateway.queue(1) is None
+

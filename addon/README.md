@@ -21,6 +21,7 @@ Watch videos from Telegram channels and groups you have joined in **Stremio or N
 | --- | --- |
 | `CHANNEL_IDS` | Leave empty to index all joined channels and groups, or enter comma-separated channel or group IDs to limit the selection. |
 | `CACHE_MB` | Sets the video chunk cache limit in MiB (default: `512`). |
+| `INDEXING_CONCURRENCY` | Number of Telegram channels or groups scanned concurrently. |
 | **TMDB show matching** → `TMDB_API_KEY` | Matches Telegram series to public catalog episodes; review uncertain matches in the Developer UI. |
 | **AI search** → `AI_SEARCH_ENABLED`, `GEMINI_API_KEY` | Adds AI movie and series search. By default, end the search with `AI` to send it to Gemini. |
 | **Developer UI** → `DEV_UI_ENABLED` | Enables the dashboard for channel status, manual sync, search, and TMDB matching. Open it through the add-on's **Open Web UI** button. |
@@ -28,3 +29,23 @@ Watch videos from Telegram channels and groups you have joined in **Stremio or N
 🔄 After enabling new catalogs or TMDB matching, refresh or reinstall the add-on in Stremio/Nuvio. Restart the Home Assistant add-on after changing its options.
 
 For all settings and reverse proxy details, see the [configuration guide](DOCS.md).
+
+
+## ⚡ Indexing speed and playback priority
+
+`INDEXING_CONCURRENCY` defaults to **2**, with an enforced range of **1–4**.
+Keep **2** for normal use. Try **3–4** when an initial import spans many channels
+and the host has spare CPU, memory, disk and network capacity. Use **1** on a
+resource-constrained host or if Telegram flood waits become frequent. A higher
+value overlaps channel requests; it does not accelerate a single channel, bypass
+Telegram limits, or create additional database writers. More concurrency uses
+more resources and can trigger longer flood waits, making indexing slower.
+Restart the add-on after changing it.
+
+Indexing saves each page and its checkpoint in one database transaction.
+Background scans, reconciliation, live-message indexing and automatic TMDB
+matching pause during playback and resume after a **2-second grace period**
+between player requests. Already-running requests or database batches may finish.
+Playback startup and video downloads do not wait for the background scan limiter.
+The pause applies at every concurrency setting; continuous playback can delay
+indexing and leave new videos unavailable until playback stops.

@@ -29,6 +29,7 @@ options:
   USER_SESSION_STRING: ""
   CACHE_MB: 512
   SCAN_INTERVAL_SECONDS: 300
+  INDEXING_CONCURRENCY: 2
   CHANNEL_IDS: ""
   DISPLAY_COLLECTION: false
   tmdb:
@@ -51,6 +52,7 @@ schema:
   USER_SESSION_STRING: password
   CACHE_MB: int(0,)
   SCAN_INTERVAL_SECONDS: int(1,)
+  INDEXING_CONCURRENCY: int(1,4)
   CHANNEL_IDS: str?
   DISPLAY_COLLECTION: bool
   tmdb:
@@ -63,4 +65,5 @@ schema:
     DEV_UI_ENABLED: bool
     SKIP_DEV_UI_AUTH: bool
     DEV_UI_PASSWORD: password?
+
 

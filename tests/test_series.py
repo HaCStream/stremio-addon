@@ -17,6 +17,9 @@ def video(message, filename, channel=-100, caption=''):
 
 
 class Gateway:
+    async def wait_background(self):
+        pass
+
     def __init__(self, cfg, store):
         self.channels = {-100: 'Test', -200: 'Other'}
     async def start(self):
@@ -306,4 +309,5 @@ def test_external_catalog_series_metadata_and_episode_streams(tmp_path):
         assert len(streams) == 1
         assert runtime.tokens.verify(streams[0]['url'].rsplit('/', 1)[-1], 'play') == 'tg:-100:1'
         assert not client.get(base + '/stream/series/tt1234567:2:1.json').json()['streams']
+
 

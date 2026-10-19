@@ -2,6 +2,7 @@ import asyncio
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
+from contextlib import contextmanager
 import base64
 import hashlib
 import hmac
@@ -122,6 +123,7 @@ class Settings:
     debug_level: str = "INFO"
     dev_ui_password: str = ''
     scan_interval_seconds: int = 300
+    indexing_concurrency: int = 2
 
     @classmethod
     def env(cls):
@@ -201,6 +203,12 @@ class Settings:
                 raise ValueError()
         except ValueError as exc:
             raise ValueError('SCAN_INTERVAL_SECONDS must be a positive integer') from exc
+        try:
+            indexing_concurrency = int(get('INDEXING_CONCURRENCY', '2'))
+            if not 1 <= indexing_concurrency <= 4:
+                raise ValueError()
+        except ValueError as exc:
+            raise ValueError('INDEXING_CONCURRENCY must be an integer between 1 and 4') from exc
         return cls(port, url, key, int(get('TELEGRAM_APP_API_ID')), get('TELEGRAM_APP_API_HASH'), get('USER_SESSION_STRING'),
                    Path(get('DATA_DIR', default_data)), int(get('CACHE_MB', '512')) * 1024**2,
                    channel_ids, debug_port, debug_host, debug_enabled, ai_enabled, gemini_key,
@@ -208,6 +216,7 @@ class Settings:
                    str(os.getenv('TMDB_API_KEY') or options.get('TMDB_API_KEY') or '').strip(),
                    display_collection=boolean('DISPLAY_COLLECTION'), debug_level=debug_level,
                    scan_interval_seconds=scan_interval,
+                   indexing_concurrency=indexing_concurrency,
                    dev_ui_password=str(os.getenv('DEV_UI_PASSWORD') or options.get('DEV_UI_PASSWORD') or '').strip())
 
 
@@ -343,6 +352,16 @@ class Store:
         self.db.execute('DELETE FROM search WHERE rowid=(SELECT fts_rowid FROM search_rows WHERE id=?)', (item,))
         self.db.execute('DELETE FROM search_rows WHERE id=?', (item,))
 
+    @contextmanager
+    def transaction(self):
+        """Join a page transaction without committing its individual messages."""
+        if self.db.in_transaction:
+            yield
+        else:
+            with self.db:
+                self.db.execute('BEGIN')
+                yield
+
     def upsert(self, row):
         row = dict(row, series_id=series_id(row['title'])
                    if row.get('season') is not None and row.get('episode') is not None else None)
@@ -350,14 +369,14 @@ class Store:
         previous = self.get(row['id'])
         if previous and all(previous.get(k) == v for k, v in row.items()):
             return
-        with self.db:
+        with self.transaction():
             self.db.execute('INSERT OR REPLACE INTO videos (' + ','.join(row) + ') VALUES (' + ','.join('?' for _ in row) + ')', list(row.values()))
             self._delete_search(row['id'])
             cursor = self.db.execute('INSERT INTO search VALUES (?,?)', (row['id'], row['search']))
             self.db.execute('INSERT INTO search_rows VALUES (?,?)', (row['id'], cursor.lastrowid))
 
     def delete(self, item):
-        with self.db:
+        with self.transaction():
             self.db.execute('DELETE FROM videos WHERE id=?', (item,))
             self._delete_search(item)
 
@@ -373,7 +392,7 @@ class Store:
         channels.update(r[0] for r in self.db.execute('SELECT channel FROM checkpoints'))
         return channels
 
-    async def prune_channels(self, channels, batch_size=500):
+    async def prune_channels(self, channels, batch_size=500, wait_background=None):
         """Remove inaccessible channels in bounded transactions, yielding between batches."""
         if not channels:
             return
@@ -393,8 +412,14 @@ class Store:
                 self.db.execute('DELETE FROM checkpoints WHERE channel=?', (channel,))
 
         for channel in params:
-            while await self.run(batch, channel):
+            while True:
+                if wait_background:
+                    await wait_background()
+                if not await self.run(batch, channel):
+                    break
                 await asyncio.sleep(0)
+            if wait_background:
+                await wait_background()
             await self.run(checkpoint, channel)
 
     def get(self, item):
@@ -459,8 +484,9 @@ class Store:
         return dict(row) if row else dict(channel=channel, oldest=0, newest=0, complete=0)
 
     def save_checkpoint(self, p):
-        with self.db:
+        with self.transaction():
             self.db.execute('INSERT OR REPLACE INTO checkpoints VALUES (:channel,:oldest,:newest,:complete)', p)
+
 
 
 
