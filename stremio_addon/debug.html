@@ -95,22 +95,27 @@ document.querySelector('#refresh').onclick=async()=>{
     button.setAttribute('aria-label','Refresh dashboard');button.title='Refresh dashboard';
   }
 };
+let syncAttempt=0;
 document.querySelector('#sync').onclick=async()=>{
+  const attempt=++syncAttempt;
   const button=document.querySelector('#sync'),status=document.querySelector('#sync-status');
   button.disabled=true;status.className='muted';status.textContent='Syncing...';
   try{
     const requested=(await api('/api/sync',{method:'POST'})).sync;
+    button.disabled=false;
     let current=requested;
     while(current.state==='queued'||current.state==='running'){
       await new Promise(resolve=>setTimeout(resolve,1000));
+      if(attempt!==syncAttempt)return;
       current=(await api('/api/sync')).sync;
+      if(attempt!==syncAttempt)return;
       if(current.id!==requested.id)throw new Error('Sync status changed. The server may have restarted; please retry.');
     }
     if(current.state!=='done')throw new Error('Sync failed: '+(current.error||'unknown error'));
     status.className='ok';status.textContent='Sync done!';
     await load().catch(()=>{});
-  }catch(err){status.className='bad';status.textContent=err.message}
-  finally{button.disabled=false}
+  }catch(err){if(attempt===syncAttempt){status.className='bad';status.textContent=err.message}}
+  finally{if(attempt===syncAttempt)button.disabled=false}
 };
 document.querySelectorAll('.tab').forEach(b=>b.onclick=async()=>{document.querySelectorAll('.tab,.view').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelector('#'+b.dataset.view).classList.add('active');if(b.dataset.view==='tmdb')await loadTMDB();if(b.dataset.view==='activity')renderActivity((await api('/api/activity')).events);if(b.dataset.view==='channels')renderChannels((await api('/api/channels')).channels)});
 function renderAIGroup(name,rows){return `<h3>${name}</h3>`+(rows.length?`<table><thead><tr><th>Title</th><th>Channel</th></tr></thead><tbody>${rows.map(x=>`<tr><td dir="auto">${esc(x.title)}</td><td dir="auto">${esc(x.channel)}</td></tr>`).join('')}</tbody></table>`:'<p class="muted">No Telegram matches.</p>')}
@@ -143,4 +148,5 @@ async function start(){
 document.querySelector('#load-retry').onclick=start;
 start();
 </script></body></html>
+
 
