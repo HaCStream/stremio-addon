@@ -4,6 +4,7 @@ import logging
 import time
 from collections import deque
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from uuid import uuid4
 from telethon import TelegramClient, events, errors, types, utils
@@ -15,13 +16,25 @@ logger = logging.getLogger("stremio_addon.telegram")
 
 CHUNK = 512 * 1024
 
+# Scope pacing to scanner tasks; playback uses the same client without this gate.
+_background_pacer = ContextVar('telegram_background_pacer', default=None)
+
+
+class BackgroundClient(TelegramClient):
+    async def __call__(self, *args, **kwargs):
+        request = super().__call__
+        pacer = _background_pacer.get()
+        if pacer is not None:
+            return await pacer(request, *args, **kwargs)
+        return await request(*args, **kwargs)
+
 
 class Telegram:
     def __init__(self, settings, store):
         self.store = store
         self.channel_ids = settings.channel_ids
-        # Handle flood waits ourselves so every scanner shares the same backoff.
-        self.client = TelegramClient(StringSession(settings.session), settings.api_id, settings.api_hash, flood_sleep_threshold=0)
+        # Handle background flood waits explicitly and retain the cooldown across sync restarts.
+        self.client = BackgroundClient(StringSession(settings.session), settings.api_id, settings.api_hash, flood_sleep_threshold=0)
         self.channels = {}
         self.known_channels = None
         self.status = {'phase': 'connecting', 'last_error': None}
@@ -40,7 +53,6 @@ class Telegram:
         self.pending_channels = set()
         self.history_remaining = {}
         self.new_remaining = {}
-        self.indexing_concurrency = settings.indexing_concurrency
         self.active_playbacks = 0
         self.playback_until = 0
         self.playback_idle = asyncio.Event()
@@ -48,6 +60,8 @@ class Telegram:
         self.scan_request_lock = asyncio.Lock()
         self.next_scan_request = 0
         self.flood_until = 0
+        self.scan_request_interval = 1.0
+        self.scan_request_successes = 0
 
     @contextmanager
     def playback(self):
@@ -72,9 +86,17 @@ class Telegram:
             elif not self.active_playbacks:
                 return
 
+    async def background_operation(self, function, *args, **kwargs):
+        """Pace each RPC inside a high-level Telethon operation, including pagination."""
+        await self.wait_background()
+        token = _background_pacer.set(self.background_request)
+        try:
+            return await function(*args, **kwargs)
+        finally:
+            _background_pacer.reset(token)
+
     async def background_request(self, function, *args, **kwargs):
         while True:
-            await self.wait_background()
             async with self.scan_request_lock:
                 while True:
                     await self.wait_background()
@@ -82,19 +104,33 @@ class Telegram:
                     if delay <= 0:
                         break
                     await asyncio.sleep(delay)
-                self.next_scan_request = time.monotonic() + .2
-            try:
-                result = await function(*args, **kwargs)
-                if self.status['phase'] == 'rate_limited' and time.monotonic() >= self.flood_until:
-                    self.status.update(last_error=None)
-                    self.status.pop('retry_after', None)
-                    self.scan_phase()
-                return result
-            except errors.FloodWaitError as exc:
-                self.flood_until = max(self.flood_until, time.monotonic() + exc.seconds)
-                self.status.update(phase='rate_limited', last_error='Telegram flood wait',
-                                   retry_after=exc.seconds)
-                logger.warning('Telegram background requests paused: retry_after_seconds=%s', exc.seconds)
+                try:
+                    result = await function(*args, **kwargs)
+                except errors.FloodWaitError as exc:
+                    # Slow future requests too, rather than repeatedly hitting the same limit.
+                    self.scan_request_interval = min(5.0, self.scan_request_interval * 2)
+                    self.scan_request_successes = 0
+                    self.flood_until = max(self.flood_until, time.monotonic() + exc.seconds + 1)
+                    self.status.update(phase='rate_limited', last_error='Telegram flood wait',
+                                       retry_after=exc.seconds + 1)
+                    operation = type(args[0]).__name__ if args else 'unknown'
+                    logger.warning('Telegram background requests paused: retry_after_seconds=%s '
+                                   'request=%s request_interval_seconds=%.2f',
+                                   exc.seconds + 1, operation, self.scan_request_interval)
+                else:
+                    self.scan_request_successes += 1
+                    # Recover gradually only after a sustained run without flood waits.
+                    if self.scan_request_successes >= 20:
+                        self.scan_request_interval = max(1.0, self.scan_request_interval - .25)
+                        self.scan_request_successes = 0
+                    if self.status['phase'] == 'rate_limited':
+                        self.status.update(last_error=None)
+                        self.status.pop('retry_after', None)
+                        self.scan_phase()
+                    return result
+                finally:
+                    # Space actual RPCs, including ones hidden within get_messages/iter_dialogs.
+                    self.next_scan_request = time.monotonic() + self.scan_request_interval
 
     def index_batch(self, channel, messages, point, direction):
         started = time.monotonic()
@@ -112,31 +148,12 @@ class Telegram:
                      channel, direction, len(messages), time.monotonic() - started)
 
     async def scan_channels(self, process):
-        # Finish catch-up for fully indexed chats before starting any backlog work.
-        groups = ([], [])
-        for channel, entity in list(self.channels.items()):
-            groups[0 if self.store.checkpoint(channel)['complete'] else 1].append((channel, entity))
-        for group in groups:
-            await self._scan_channel_group(process, group)
-
-    async def _scan_channel_group(self, process, group):
-        channels = iter(group)
-
-        async def worker():
-            for channel, entity in channels:
-                await self.wait_background()
-                await process(channel, entity)
-
-        tasks = [asyncio.create_task(worker()) for _ in
-                 range(min(self.indexing_concurrency, len(group)))]
-        try:
-            await asyncio.gather(*tasks)
-        finally:
-            # Drain siblings before retrying a pass, pruning, or closing SQLite.
-            for task in tasks:
-                if not task.cancelling():
-                    task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+        # Refresh completed chats first, then resume history, one channel at a time.
+        channels = list(self.channels.items())
+        channels.sort(key=lambda item: not self.store.checkpoint(item[0])['complete'])
+        for channel, entity in channels:
+            await self.wait_background()
+            await process(channel, entity)
 
     def queue(self, channel):
         """Estimated pending messages; ID gaps are included until scanning finishes."""
@@ -201,7 +218,7 @@ class Telegram:
         while True:
             await self.wait_background()
             try:
-                dialog = await anext(dialogs)
+                dialog = await self.background_operation(anext, dialogs)
             except StopAsyncIteration:
                 break
             entity = dialog.entity
@@ -255,6 +272,8 @@ class Telegram:
         await self.scan_history(channel, entity)
 
     def scan_phase(self):
+        if time.monotonic() < self.flood_until:
+            return
         self.status.update(phase='indexing' if self.pending_channels else 'checking',
                            pending_channels=len(self.pending_channels))
 
@@ -264,7 +283,7 @@ class Telegram:
         if p['newest']:
             self.scan_phase()
             # Freeze the target: a busy group cannot extend this catch-up forever.
-            latest = await self.background_request(self.client.get_messages, entity, limit=1, offset_id=0)
+            latest = await self.background_operation(self.client.get_messages, entity, limit=1, offset_id=0)
             target = latest[0].id if latest else p['newest']
             if target > p['newest']:
                 history_pending = channel in self.pending_channels
@@ -272,7 +291,7 @@ class Telegram:
                 self.scan_phase()
                 self.new_remaining[channel] = target - p['newest']
                 while p['newest'] < target:
-                    batch = await self.background_request(
+                    batch = await self.background_operation(
                         self.client.get_messages, entity, limit=100,
                         min_id=p['newest'], max_id=target + 1, reverse=True)
                     if not batch:
@@ -293,16 +312,16 @@ class Telegram:
         p = self.store.checkpoint(channel)
         if not p['complete']:
             self.scan_phase()
-            # One look-ahead message proves a backlog remains after this batch.
-            batch = await self.background_request(self.client.get_messages, entity, limit=101, offset_id=p['oldest'])
+            # Keep a look-ahead within Telegram's 100-message page: 99 indexed + 1 proof of backlog.
+            batch = await self.background_operation(self.client.get_messages, entity, limit=100, offset_id=p['oldest'])
             if batch:
                 self.history_remaining[channel] = max(0, batch[0].id)
                 self.pending_channels.add(channel)
                 self.scan_phase()
-            if len(batch) <= 100:
+            if len(batch) < 100:
                 p['complete'] = 1
             await self.wait_background()
-            await self.store.run(self.index_batch, channel, batch[:100], p, 'history')
+            await self.store.run(self.index_batch, channel, batch[:99], p, 'history')
             if batch:
                 self.history_remaining[channel] = max(0, p['oldest'] - 1)
             if p['complete']:
@@ -310,7 +329,7 @@ class Telegram:
                 self.history_remaining[channel] = 0
             self.scan_phase()
             logger.debug('History batch: channel=%s messages=%s oldest=%s complete=%s',
-                         channel, min(len(batch), 100), p['oldest'], bool(p['complete']))
+                         channel, min(len(batch), 99), p['oldest'], bool(p['complete']))
 
     async def reconcile(self):
         await self.wait_background()
@@ -328,7 +347,7 @@ class Telegram:
             entity = self.channels.get(channel)
             if not entity:
                 continue
-            messages = await self.background_request(self.client.get_messages, entity, ids=[r['message'] for r in group])
+            messages = await self.background_operation(self.client.get_messages, entity, ids=[r['message'] for r in group])
             for row, message in zip(group, messages):
                 if message and not isinstance(message, types.MessageEmpty):
                     await self.wait_background()
@@ -430,10 +449,9 @@ class Telegram:
                     scanned_channels.clear()
                     logger.info('Telegram scan complete: channels=%s next_check_seconds=%s',
                                 len(self.channels), self.scan_interval_seconds)
-                try:
-                    await asyncio.wait_for(self.sync_requested.wait(), 2 if incomplete else self.scan_interval_seconds)
-                except TimeoutError:
-                    pass
+                # The supervisor in run() alone handles manual restarts. Letting this
+                # cycle consume the signal as well can start the same sync twice.
+                await asyncio.sleep(2 if incomplete else self.scan_interval_seconds)
             except errors.FloodWaitError as exc:
                 self.status.update(phase='rate_limited', last_error='Telegram flood wait', retry_after=exc.seconds)
                 logger.warning('Telegram sync rate limited: retry_after_seconds=%s', exc.seconds)

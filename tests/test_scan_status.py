@@ -19,7 +19,7 @@ def gateway(tmp_path):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('count', [0, 100, 101])
+@pytest.mark.parametrize('count', [0, 99, 100, 101])
 async def test_history_status_requires_confirmed_messages(gateway, count):
     states = []
 
@@ -33,9 +33,9 @@ async def test_history_status_requires_confirmed_messages(gateway, count):
     await gateway.scan_history(1, 1)
     assert states[0] == 'checking'  # Unknown checkpoint alone is not backlog evidence.
     assert all(state == 'indexing' for state in states[1:])
-    assert gateway.store.checkpoint(1)['complete'] == int(count <= 100)
-    assert gateway.pending_channels == ({1} if count == 101 else set())
-    assert gateway.status['phase'] == ('indexing' if count == 101 else 'checking')
+    assert gateway.store.checkpoint(1)['complete'] == int(count < 100)
+    assert gateway.pending_channels == ({1} if count >= 100 else set())
+    assert gateway.status['phase'] == ('indexing' if count >= 100 else 'checking')
 
 
 @pytest.mark.asyncio
@@ -84,15 +84,14 @@ async def test_idle_cycle_uses_interval_and_reconciliation_is_not_indexing(gatew
     async def reconcile():
         assert gateway.status['phase'] != 'indexing'
 
-    async def wait_for(awaitable, timeout):
-        awaitable.close()
+    async def sleep(timeout):
         assert timeout == 7200
         assert gateway.status['phase'] == 'ready'
         raise asyncio.CancelledError()
 
     gateway.client = Client()
     gateway.discover, gateway.reconcile = discover, reconcile
-    monkeypatch.setattr(asyncio, 'wait_for', wait_for)
+    monkeypatch.setattr(asyncio, 'sleep', sleep)
     with pytest.raises(asyncio.CancelledError):
         await gateway.run()
 
@@ -138,8 +137,7 @@ async def test_confirmed_backlog_continues_without_waiting_for_scan_interval(gat
     async def reconcile():
         pass
 
-    async def wait_for(awaitable, timeout):
-        awaitable.close()
+    async def sleep(timeout):
         assert timeout == 2
         assert gateway.status['phase'] == 'indexing'
         assert gateway.status['pending_channels'] == 1
@@ -147,7 +145,7 @@ async def test_confirmed_backlog_continues_without_waiting_for_scan_interval(gat
 
     gateway.client = Client()
     gateway.discover, gateway.reconcile = discover, reconcile
-    monkeypatch.setattr(asyncio, 'wait_for', wait_for)
+    monkeypatch.setattr(asyncio, 'sleep', sleep)
     with pytest.raises(asyncio.CancelledError):
         await gateway.run()
 
@@ -200,7 +198,7 @@ async def test_queue_estimates_include_id_gaps_and_reach_zero(gateway, tmp_path)
     assert gateway.queue(1) is None
     await gateway.scan(1, 1)
     assert observed[0] == 20500
-    assert gateway.queue(1) == 10599
+    assert gateway.queue(1) == 10699
 
     # A fresh process must derive remaining history from the saved checkpoint.
     gateway.store.db.close()
@@ -209,7 +207,7 @@ async def test_queue_estimates_include_id_gaps_and_reach_zero(gateway, tmp_path)
     gateway.new_remaining.clear()
     assert gateway.queue(1) is None
     await gateway.scan(1, 1)
-    assert gateway.queue(1) == 599
+    assert gateway.queue(1) == 799
     await gateway.scan(1, 1)
     assert gateway.queue(1) == 0
     assert gateway.store.checkpoint(1)['complete']

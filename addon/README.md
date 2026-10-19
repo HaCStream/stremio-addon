@@ -21,7 +21,6 @@ Watch videos from Telegram channels and groups you have joined in **Stremio or N
 | --- | --- |
 | `CHANNEL_IDS` | Leave empty to index all joined channels and groups, or enter comma-separated channel or group IDs to limit the selection. |
 | `CACHE_MB` | Sets the video chunk cache limit in MiB (default: `512`). |
-| `INDEXING_CONCURRENCY` | Number of Telegram channels or groups scanned concurrently. |
 | **TMDB show matching** → `TMDB_API_KEY` | Matches Telegram series to public catalog episodes; review uncertain matches in the Developer UI. |
 | **AI search** → `AI_SEARCH_ENABLED`, `GEMINI_API_KEY` | Adds AI movie and series search. By default, end the search with `AI` to send it to Gemini. |
 | **Developer UI** → `DEV_UI_ENABLED` | Enables the dashboard for channel status, manual sync, search, and TMDB matching. Open it through the add-on's **Open Web UI** button. |
@@ -33,22 +32,27 @@ For all settings and reverse proxy details, see the [configuration guide](DOCS.m
 
 ## ⚡ Indexing speed and playback priority
 
-`INDEXING_CONCURRENCY` defaults to **2**, with an enforced range of **1–4**.
-Keep **2** for normal use. Try **3–4** when an initial import spans many channels
-and the host has spare CPU, memory, disk and network capacity. Use **1** on a
-resource-constrained host or if Telegram flood waits become frequent. A higher
-value overlaps channel requests; it does not accelerate a single channel, bypass
-Telegram limits, or create additional database writers. More concurrency uses
-more resources and can trigger longer flood waits, making indexing slower.
-Restart the add-on after changing it.
+Channels and groups are scanned **one at a time**, with fully indexed chats
+refreshed before unfinished history scans. Background Telegram requests are
+spaced by at least **1 second** after each response, including requests made
+inside pagination and channel discovery. A flood wait pauses background
+requests for Telegram's requested delay plus **1 second**, then doubles the
+request spacing up to **5 seconds**. After every **20 successful requests**, the
+spacing decreases by **0.25 seconds**, down to the 1-second baseline. These are
+local pacing choices, not guaranteed Telegram limits; flood waits can still occur.
+Sync now keeps the cooldown and pacing; restarting the add-on resets adaptive
+spacing. Old `INDEXING_CONCURRENCY` values are ignored and can be removed.
+
+History pages fetch up to 100 messages: 99 to index and one look-ahead message
+that confirms whether unscanned history remains, avoiding a second request just
+for look-ahead.
 
 Indexing saves each page and its checkpoint in one database transaction.
 Background scans, reconciliation, live-message indexing and automatic TMDB
 matching pause during playback and resume after a **2-second grace period**
 between player requests. Already-running requests or database batches may finish.
 Playback startup and video downloads do not wait for the background scan limiter.
-The pause applies at every concurrency setting; continuous playback can delay
-indexing and leave new videos unavailable until playback stops.
+Continuous playback can delay indexing and leave new videos unavailable until playback stops.
 
 
 🔄 **Sync now** restarts any running indexing cycle, keeping saved progress. Fully indexed channels and groups are refreshed first, then unfinished history scans resume. You can click it again while syncing to restart. Streaming keeps priority over indexing.

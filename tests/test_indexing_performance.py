@@ -48,9 +48,7 @@ async def test_page_commits_fts_and_checkpoint_once_and_rolls_back_on_failure(tg
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('concurrency', [1, 2, 4])
-async def test_channel_workers_are_bounded_and_each_channel_runs_once(tg, concurrency):
-    tg.indexing_concurrency = concurrency
+async def test_channels_are_scanned_serially_and_once(tg):
     tg.channels = {i: i for i in range(11)}
     active = peak = 0
     visited = []
@@ -62,29 +60,21 @@ async def test_channel_workers_are_bounded_and_each_channel_runs_once(tg, concur
         await asyncio.sleep(.001)
         active -= 1
     await tg.scan_channels(process)
-    assert peak == concurrency
+    assert peak == 1
     assert sorted(visited) == list(range(11))
     assert active == 0
 
 
 @pytest.mark.asyncio
-async def test_failed_worker_cancels_and_drains_sibling(tg):
+async def test_failed_channel_does_not_start_another_scan(tg):
     tg.channels = {1: 1, 2: 2, 3: 3}
-    started = asyncio.Event()
-    finished = asyncio.Event()
+    visited = []
     async def process(channel, entity):
-        if channel == 1:
-            await started.wait()
-            raise ValueError('failed scan')
-        assert channel == 2
-        started.set()
-        try:
-            await asyncio.Event().wait()
-        finally:
-            finished.set()
+        visited.append(channel)
+        raise ValueError('failed scan')
     with pytest.raises(ValueError, match='failed scan'):
         await tg.scan_channels(process)
-    assert finished.is_set()
+    assert visited == [1]
 
 
 @pytest.mark.asyncio
@@ -153,11 +143,11 @@ async def test_cancelled_stream_releases_playback_priority(tg):
 
 
 @pytest.mark.asyncio
-async def test_background_flood_wait_is_shared_and_playback_bypasses_it(tg):
+async def test_background_flood_wait_is_shared_and_playback_bypasses_it(tg, clock):
     calls = []
     flood = asyncio.Event()
     async def request(name):
-        calls.append((name, time.monotonic()))
+        calls.append((name, clock.monotonic()))
         if len(calls) == 1:
             flood.set()
             raise errors.FloodWaitError(request=None, capture=1)
@@ -171,10 +161,13 @@ async def test_background_flood_wait_is_shared_and_playback_bypasses_it(tg):
     assert await asyncio.wait_for(anext(stream), .1) == b'bytes'
     await stream.aclose()
     tg.playback_until = 0
-    assert await asyncio.wait_for(asyncio.gather(first, second), 2) == ['first', 'second']
+    assert await asyncio.wait_for(asyncio.gather(first, second), 1) == ['first', 'second']
     assert len(calls) == 3
-    assert calls[1][1] - calls[0][1] >= .99
-    assert calls[2][1] - calls[1][1] >= .19
+    assert calls[1][1] - calls[0][1] >= 2
+    assert calls[2][1] - calls[1][1] >= 2
+    assert tg.scan_request_interval == 2
+    assert clock.delays
+    assert all(delay > 0 for delay in clock.delays)
 
 
 @pytest.mark.asyncio
@@ -193,28 +186,15 @@ async def test_automatic_tmdb_matching_waits_for_playback(tg):
         await tmdb.http.aclose()
 
 
-@pytest.mark.parametrize('value', ['0', '5', '-1', '2.5', 'bad'])
-def test_concurrency_rejects_values_outside_limit(monkeypatch, value):
-    for name, v in dict(ADDON_URL='http://localhost', ADDON_ACCESS_KEY='a'*32,
-                        TELEGRAM_APP_API_ID='1', TELEGRAM_APP_API_HASH='hash',
-                        USER_SESSION_STRING='session', INDEXING_CONCURRENCY=value).items():
-        monkeypatch.setenv(name, v)
-    with pytest.raises(ValueError, match='INDEXING_CONCURRENCY must be an integer between 1 and 4'):
-        Settings.env()
-
-
-def test_concurrency_default_and_home_assistant_translation(monkeypatch):
-    for name, v in dict(ADDON_URL='http://localhost', ADDON_ACCESS_KEY='a'*32,
-                        TELEGRAM_APP_API_ID='1', TELEGRAM_APP_API_HASH='hash',
-                        USER_SESSION_STRING='session').items():
-        monkeypatch.setenv(name, v)
-    monkeypatch.delenv('INDEXING_CONCURRENCY', raising=False)
-    assert Settings.env().indexing_concurrency == 2
+def test_removed_concurrency_options_are_ignored(monkeypatch):
+    for name, value in dict(ADDON_URL='http://localhost', ADDON_ACCESS_KEY='a'*32,
+                           TELEGRAM_APP_API_ID='1', TELEGRAM_APP_API_HASH='hash',
+                           USER_SESSION_STRING='session', INDEXING_CONCURRENCY='bad').items():
+        monkeypatch.setenv(name, value)
+    assert not hasattr(Settings.env(), 'indexing_concurrency')
     env = {}
     configure({'INDEXING_CONCURRENCY': 4}, env)
-    assert env['INDEXING_CONCURRENCY'] == '4'
-    monkeypatch.setenv('INDEXING_CONCURRENCY', env['INDEXING_CONCURRENCY'])
-    assert Settings.env().indexing_concurrency == 4
+    assert 'INDEXING_CONCURRENCY' not in env
 
 
 @pytest.mark.asyncio
@@ -240,7 +220,6 @@ async def test_playback_startup_gets_priority_but_thumbnail_lookup_does_not(tg):
 
 @pytest.mark.asyncio
 async def test_completed_channels_finish_before_any_history_backlog(tg):
-    tg.indexing_concurrency = 2
     tg.channels = {1: 1, 2: 2, 3: 3, 4: 4}
     for channel in (2, 4):
         tg.store.save_checkpoint(dict(channel=channel, newest=20, oldest=1, complete=1))
@@ -296,3 +275,158 @@ async def test_restarting_manual_sync_drains_sql_and_preserves_checkpoint(tg):
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    import stremio_addon.telegram as module
+    class Clock:
+        now = 100.0
+        def __init__(self):
+            self.delays = []
+        def monotonic(self):
+            return self.now
+        async def sleep(self, delay):
+            self.delays.append(delay)
+            self.now += delay
+            await asyncio.sleep(0)
+    clock = Clock()
+    monkeypatch.setattr(module, 'time', SimpleNamespace(monotonic=clock.monotonic))
+    monkeypatch.setattr(module, 'asyncio', SimpleNamespace(**(vars(asyncio) | {'sleep': clock.sleep})))
+    return clock
+
+
+@pytest.mark.asyncio
+async def test_full_history_pages_use_one_rpc_and_keep_lookahead(tg, clock, monkeypatch):
+    from datetime import datetime, timezone
+    from telethon import types, functions
+    entity = types.InputPeerChannel(1, 2)
+    calls, indexed = [], []
+    remote_ids = list(range(1205, 1000, -1))
+    async def wire(sender, request, **kwargs):
+        assert isinstance(request, functions.messages.GetHistoryRequest)
+        calls.append((clock.now, request.limit))
+        ids = [i for i in remote_ids if not request.offset_id or i < request.offset_id][:request.limit]
+        return types.messages.MessagesSlice(count=len(remote_ids), users=[], chats=[], topics=[], messages=[
+            types.Message(id=i, peer_id=types.PeerChannel(1), date=datetime.now(timezone.utc), message='')
+            for i in ids])
+    monkeypatch.setattr(tg.client, '_call', wire)
+    tg.index = lambda channel, message: indexed.append(message.id)
+    await tg.scan_history(1, entity)
+    assert len(calls) == 1
+    assert len(indexed) == 99
+    assert tg.pending_channels == {1}
+    assert not tg.store.checkpoint(1)['complete']
+    await tg.scan_history(1, entity)
+    assert len(calls) == 2
+    await tg.scan_history(1, entity)
+    assert indexed == remote_ids
+    assert tg.store.checkpoint(1)['complete']
+    # Telethon may confirm the final short page with an empty request.
+    assert len(calls) == 4
+    assert all(limit <= 100 for _, limit in calls)
+    assert all(b[0] - a[0] >= 1 for a, b in zip(calls, calls[1:]))
+
+
+@pytest.mark.asyncio
+async def test_hidden_pagination_is_paced_and_foreground_bypasses_gate(tg, clock, monkeypatch):
+    from datetime import datetime, timezone
+    from telethon import types, functions
+    entity = types.InputPeerChannel(1, 2)
+    calls = []
+    async def wire(sender, request, **kwargs):
+        calls.append(clock.now)
+        if isinstance(request, functions.channels.GetMessagesRequest):
+            return types.messages.Messages(messages=[], topics=[], chats=[], users=[])
+        offset = request.offset_id or 1000
+        return types.messages.MessagesSlice(count=1000, users=[], chats=[], topics=[], messages=[
+            types.Message(id=i, peer_id=types.PeerChannel(1), date=datetime.now(timezone.utc), message='')
+            for i in range(offset - 1, offset - request.limit - 1, -1)])
+    monkeypatch.setattr(tg.client, '_call', wire)
+    # Even a multi-page high-level call must space each RPC, not just its entry.
+    page = await tg.background_operation(tg.client.get_messages, entity, limit=201)
+    assert len(page) == 201
+    assert len(calls) == 3
+    assert calls == [100, 101, 102]
+    tg.flood_until = clock.now + 3600
+    # No background ContextVar leaks into the foreground after the operation.
+    await tg.client.get_messages(entity, ids=[1])
+    assert calls[-1] == 102
+
+
+@pytest.mark.asyncio
+async def test_adaptive_pacing_caps_and_recovers_gradually(tg, clock):
+    intervals = []
+    attempts = 0
+    async def request():
+        nonlocal attempts
+        attempts += 1
+        intervals.append(tg.scan_request_interval)
+        if attempts <= 4:
+            raise errors.FloodWaitError(request=None, capture=3)
+        return 'ok'
+    assert await tg.background_request(request) == 'ok'
+    assert intervals == [1, 2, 4, 5, 5]
+    assert tg.status['phase'] == 'checking'
+    assert 'retry_after' not in tg.status
+    for _ in range(19):
+        await tg.background_request(AsyncMock())
+    assert tg.scan_request_interval == 4.75
+    for _ in range(320):
+        await tg.background_request(AsyncMock())
+    assert tg.scan_request_interval == 1
+
+
+@pytest.mark.asyncio
+async def test_sync_restart_keeps_rpc_cooldown_and_rate_limited_status(tg, clock, monkeypatch):
+    from telethon import types
+    wire_calls = []
+    async def wire(sender, request, **kwargs):
+        wire_calls.append(clock.now)
+        return types.messages.Dialogs(dialogs=[], messages=[], chats=[], users=[])
+    monkeypatch.setattr(tg.client, '_call', wire)
+    tg.flood_until = clock.now + 22
+    tg.scan_request_interval = 4
+    tg.status['phase'] = 'rate_limited'
+    tg.request_sync()
+    tg.scan_phase()
+    assert tg.status['phase'] == 'rate_limited'
+    # Discovery must respect the same cooldown, including on a fresh manual sync.
+    await tg.discover()
+    assert wire_calls[0] >= 122
+    assert tg.scan_request_interval == 4
+
+
+@pytest.mark.asyncio
+async def test_cancelled_operation_resets_background_context(tg, clock, monkeypatch):
+    from telethon import types
+    tg.flood_until = clock.now + 10
+    with pytest.raises(asyncio.CancelledError):
+        await tg.background_operation(AsyncMock(side_effect=asyncio.CancelledError))
+    wire = AsyncMock(return_value=types.messages.Messages(messages=[], topics=[], chats=[], users=[]))
+    monkeypatch.setattr(tg.client, '_call', wire)
+    await tg.client.get_messages(types.InputPeerChannel(1, 2), ids=[1])
+    assert clock.now == 100
+    wire.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_flood_on_second_rpc_retries_only_that_page(tg, clock, monkeypatch, caplog):
+    from datetime import datetime, timezone
+    from telethon import types
+    calls = []
+    async def wire(sender, request, **kwargs):
+        calls.append((request.offset_id, clock.now))
+        if len(calls) == 2:
+            raise errors.FloodWaitError(request=request, capture=1)
+        offset = request.offset_id or 1000
+        return types.messages.MessagesSlice(count=1000, users=[], chats=[], topics=[], messages=[
+            types.Message(id=i, peer_id=types.PeerChannel(1), date=datetime.now(timezone.utc), message='')
+            for i in range(offset - 1, offset - request.limit - 1, -1)])
+    monkeypatch.setattr(tg.client, '_call', wire)
+    result = await tg.background_operation(tg.client.get_messages, types.InputPeerChannel(1, 2), limit=201)
+    assert [m.id for m in result] == list(range(999, 798, -1))
+    assert calls == [(0, 100), (900, 101), (900, 103), (800, 105)]
+    assert tg.scan_request_interval == 2
+    assert tg.status['phase'] == 'checking'
+    assert 'request=GetHistoryRequest' in caplog.text
