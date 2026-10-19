@@ -1,5 +1,15 @@
 # Changelog
 
+<!-- release:1.6.10:start -->
+## 1.6.10
+
+## What's Changed
+* Remove concurrent indexing and reduce Telegram flood waits by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/57
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.6.9...v1.6.10
+<!-- release:1.6.10:end -->
+
 <!-- release:1.6.9:start -->
 ## 1.6.9
 
