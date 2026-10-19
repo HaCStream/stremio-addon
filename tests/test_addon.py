@@ -721,7 +721,6 @@ async def test_manual_sync_lifecycle(tmp_path, caplog, failure):
     try:
         await asyncio.wait_for(waiting.wait(), 1)
         assert gateway.sync_status['state'] == 'running'
-        assert gateway.request_sync()['id'] == requested['id']
         release.set()
 
         async def finished():
@@ -822,11 +821,11 @@ async def test_sync_scans_each_channel_once_and_resumes_history(tmp_path, flood)
 
 
 @pytest.mark.asyncio
-async def test_sync_requested_during_background_scan_waits_for_discovery(tmp_path):
+async def test_sync_requested_during_background_scan_cancels_before_discovery(tmp_path):
     import asyncio
     store = Store(tmp_path / 'db')
     gateway = Telegram(Settings(8000, 'http://localhost', 'a'*32, 1, 'hash', '', tmp_path), store)
-    scanning, release, rediscovering = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    scanning, cancelled, rediscovering = asyncio.Event(), asyncio.Event(), asyncio.Event()
     discoveries = []
 
     async def discover():
@@ -838,7 +837,10 @@ async def test_sync_requested_during_background_scan_waits_for_discovery(tmp_pat
 
     async def scan(channel, entity):
         scanning.set()
-        await release.wait()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
         checkpoint = store.checkpoint(channel)
         checkpoint['complete'] = 1
         store.save_checkpoint(checkpoint)
@@ -851,8 +853,9 @@ async def test_sync_requested_during_background_scan_waits_for_discovery(tmp_pat
     try:
         await asyncio.wait_for(scanning.wait(), 1)
         gateway.request_sync()
-        release.set()
         await asyncio.wait_for(rediscovering.wait(), 1)
+        assert cancelled.is_set()
+        assert not store.checkpoint(-100123)["complete"]
         assert gateway.sync_status['state'] == 'running'
     finally:
         task.cancel()
@@ -999,5 +1002,6 @@ def test_dev_ui_password_environment(monkeypatch, password):
     if password is not None:
         monkeypatch.setenv('DEV_UI_PASSWORD', password)
     assert core.Settings.env().dev_ui_password == (password or '')
+
 
 
