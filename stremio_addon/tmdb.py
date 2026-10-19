@@ -4,12 +4,14 @@ import json
 import logging
 import re
 import time
+from contextvars import ContextVar
 
 import httpx
 
 from .core import normalize, title_aliases
 
 log = logging.getLogger(__name__)
+background_matching = ContextVar('background_matching', default=False)
 
 
 def public_episode(identifier):
@@ -29,6 +31,8 @@ class TMDB:
         self.retry_at = 0
 
     async def get(self, path, **params):
+        if background_matching.get():
+            await self.gateway.wait_background()
         if time.time() < self.retry_at:
             raise RuntimeError('TMDB is temporarily unavailable; retry later')
         response = await self.http.get('https://api.themoviedb.org/3' + path,
@@ -120,6 +124,8 @@ class TMDB:
             # Use it only to disambiguate multiple exact title matches.
             dated = [c for c in exact if c['year_match']]
             selected = exact[0] if len(exact) == 1 else dated[0] if len(dated) == 1 else None
+            if background_matching.get():
+                await self.gateway.wait_background()
             await self.store.run(self.save, identifier, selected or {},
                                  'auto' if selected else 'ambiguous' if candidates else 'unmatched', candidates)
             log.debug('TMDB show match: show=%s status=%s candidates=%d',
@@ -182,7 +188,16 @@ class TMDB:
         return {r['series_id'] for r in self.store.db.execute('SELECT series_id FROM tmdb_series')}
 
     async def scan_once(self):
+        token = background_matching.set(True)
+        try:
+            await self.gateway.wait_background()
+            await self._scan_once()
+        finally:
+            background_matching.reset(token)
+
+    async def _scan_once(self):
         for show in await self.store.run(self.shows, set(self.gateway.channels)):
+            await self.gateway.wait_background()
             saved = show['mapping']
             if saved and (saved['status'] in ('auto', 'manual', 'blocked') or
                           time.time() - saved['checked_at'] < 86400):
@@ -204,3 +219,4 @@ class TMDB:
             except Exception as exc:
                 log.warning('TMDB matching pass failed: error=%s', type(exc).__name__)
             await asyncio.sleep(60)
+

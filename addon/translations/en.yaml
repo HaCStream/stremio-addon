@@ -20,6 +20,9 @@ configuration:
   USER_SESSION_STRING:
     name: Telegram session string
     description: Complete Telethon StringSession for the Telegram account to index.
+  INDEXING_CONCURRENCY:
+    name: Indexing concurrency
+    description: Number of Telegram channels or groups scanned concurrently.
   SCAN_INTERVAL_SECONDS:
     name: Scan interval (seconds)
     description: >-
@@ -87,4 +90,5 @@ configuration:
 network:
   8000/tcp: Stremio addon endpoint.
   8001/tcp: Developer UI endpoint.
+
 

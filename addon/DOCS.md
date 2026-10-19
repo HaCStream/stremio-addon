@@ -50,6 +50,7 @@ Set these options in the add-on's Configuration tab:
 | `USER_SESSION_STRING` | Complete Telethon StringSession |
 | `DISPLAY_COLLECTION` | Show Telegram collections on the main screen (default `false`); search remains available. Restart and refresh/reinstall the addon in your client after changing it |
 | `CACHE_MB` | Optional cache limit in MiB, default `512` |
+| `INDEXING_CONCURRENCY` | Number of Telegram channels or groups scanned concurrently. |
 | `CHANNEL_IDS` | Optional comma-separated negative channel or group IDs; blank scans all joined public and private channels and groups |
 
 For example, set `CHANNEL_IDS: "-1001234567890,-1009876543210"` and restart
@@ -194,3 +195,23 @@ checks, **Indexing** only after Telegram confirms unscanned messages, and
 Unscanned messages may or may not contain videos. History checkpoints survive
 restarts, and each catch-up uses a fixed latest-message target so new arrivals
 are handled on the next cycle. TMDB matching runs independently of these states.
+
+
+## ⚡ Indexing speed and playback priority
+
+`INDEXING_CONCURRENCY` defaults to **2**, with an enforced range of **1–4**.
+Keep **2** for normal use. Try **3–4** when an initial import spans many channels
+and the host has spare CPU, memory, disk and network capacity. Use **1** on a
+resource-constrained host or if Telegram flood waits become frequent. A higher
+value overlaps channel requests; it does not accelerate a single channel, bypass
+Telegram limits, or create additional database writers. More concurrency uses
+more resources and can trigger longer flood waits, making indexing slower.
+Restart the add-on after changing it.
+
+Indexing saves each page and its checkpoint in one database transaction.
+Background scans, reconciliation, live-message indexing and automatic TMDB
+matching pause during playback and resume after a **2-second grace period**
+between player requests. Already-running requests or database batches may finish.
+Playback startup and video downloads do not wait for the background scan limiter.
+The pause applies at every concurrency setting; continuous playback can delay
+indexing and leave new videos unavailable until playback stops.

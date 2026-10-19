@@ -265,7 +265,7 @@ def create_app_with_runtime(runtime):
     async def play(token, request: Request):
         row = await token_row(token, 'play')
         try:
-            message = await app.state.tg.message(row)
+            message = await app.state.tg.message(row, priority=True)
         except FileNotFoundError:
             raise HTTPException(404) from None
         row = await app.state.store.run(app.state.store.get, row['id'])
@@ -315,4 +315,5 @@ def create_app_with_runtime(runtime):
     return app
 
 app = create_app()
+
 
