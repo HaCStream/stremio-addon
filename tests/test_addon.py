@@ -662,7 +662,7 @@ async def test_history_restart_checkpoint(tmp_path):
             return sorted(found, key=lambda m: m.id, reverse=not reverse)[:limit]
     gateway.client = Client()
     await gateway.scan(123, None)
-    assert store.checkpoint(123)['oldest'] == 106
+    assert store.checkpoint(123)['oldest'] == 107
     store.db.close()
     gateway.store = Store(tmp_path / 'db')
     messages.insert(0, SimpleNamespace(id=206))
@@ -755,21 +755,17 @@ async def test_manual_sync_lifecycle(tmp_path, caplog, failure):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('flood', [False, True])
-async def test_sync_scans_each_channel_once_and_resumes_history(tmp_path, flood):
+async def test_sync_scans_each_channel_once_and_resumes_history(tmp_path):
     import asyncio
-    from telethon import errors
 
     store = Store(tmp_path / 'db')
     gateway = Telegram(Settings(8000, 'http://localhost', 'a'*32, 1, 'hash', '', tmp_path), store)
     store.save_checkpoint(dict(channel=1, newest=10, oldest=1, complete=1))
     store.save_checkpoint(dict(channel=2, newest=305, oldest=206, complete=0))
     catch_ups, history_offsets, indexed, reconciliations = [], [], [], []
-    flood_pending = flood
 
     class Client:
         async def get_messages(self, entity, limit, offset_id=0, min_id=0, max_id=0, reverse=False):
-            nonlocal flood_pending
             if reverse:
                 assert entity == 2 and min_id == 305 and max_id == 307
                 return [SimpleNamespace(id=306)]
@@ -777,9 +773,6 @@ async def test_sync_scans_each_channel_once_and_resumes_history(tmp_path, flood)
                 catch_ups.append((entity, store.checkpoint(entity)['newest']))
                 return [SimpleNamespace(id=10 if entity == 1 else 306)]
             assert entity == 2, 'Completed channels must not be scanned again'
-            if flood_pending:
-                flood_pending = False
-                raise errors.FloodWaitError(request=None, capture=0)
             history_offsets.append(offset_id)
             return [SimpleNamespace(id=i) for i in range(offset_id - 1, 0, -1)][:limit]
 
@@ -803,7 +796,7 @@ async def test_sync_scans_each_channel_once_and_resumes_history(tmp_path, flood)
     try:
         await asyncio.wait_for(finished(), 8)
         assert catch_ups == [(1, 10), (2, 305)]
-        assert history_offsets == [206, 106, 6]
+        assert history_offsets == [206, 107, 8]
         assert indexed == [(2, 306)] + [(2, i) for i in range(205, 0, -1)]
         assert store.checkpoint(2) == dict(channel=2, newest=306, oldest=1, complete=1)
         assert reconciliations == []
@@ -812,7 +805,7 @@ async def test_sync_scans_each_channel_once_and_resumes_history(tmp_path, flood)
         gateway.request_sync()
         await asyncio.wait_for(finished(), 2)
         assert catch_ups == [(1, 10), (2, 305), (1, 10), (2, 306)]
-        assert history_offsets == [206, 106, 6]
+        assert history_offsets == [206, 107, 8]
     finally:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):

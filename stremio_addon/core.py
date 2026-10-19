@@ -123,7 +123,6 @@ class Settings:
     debug_level: str = "INFO"
     dev_ui_password: str = ''
     scan_interval_seconds: int = 300
-    indexing_concurrency: int = 2
 
     @classmethod
     def env(cls):
@@ -203,12 +202,6 @@ class Settings:
                 raise ValueError()
         except ValueError as exc:
             raise ValueError('SCAN_INTERVAL_SECONDS must be a positive integer') from exc
-        try:
-            indexing_concurrency = int(get('INDEXING_CONCURRENCY', '2'))
-            if not 1 <= indexing_concurrency <= 4:
-                raise ValueError()
-        except ValueError as exc:
-            raise ValueError('INDEXING_CONCURRENCY must be an integer between 1 and 4') from exc
         return cls(port, url, key, int(get('TELEGRAM_APP_API_ID')), get('TELEGRAM_APP_API_HASH'), get('USER_SESSION_STRING'),
                    Path(get('DATA_DIR', default_data)), int(get('CACHE_MB', '512')) * 1024**2,
                    channel_ids, debug_port, debug_host, debug_enabled, ai_enabled, gemini_key,
@@ -216,7 +209,6 @@ class Settings:
                    str(os.getenv('TMDB_API_KEY') or options.get('TMDB_API_KEY') or '').strip(),
                    display_collection=boolean('DISPLAY_COLLECTION'), debug_level=debug_level,
                    scan_interval_seconds=scan_interval,
-                   indexing_concurrency=indexing_concurrency,
                    dev_ui_password=str(os.getenv('DEV_UI_PASSWORD') or options.get('DEV_UI_PASSWORD') or '').strip())
 
 
