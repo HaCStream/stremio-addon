@@ -1,5 +1,16 @@
 # Changelog
 
+<!-- release:1.6.9:start -->
+## 1.6.9
+
+## What's Changed
+* Speed up indexing while prioritizing streaming playback by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/55
+* Restart indexing on Sync now and refresh completed channels first by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/56
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.6.8...v1.6.9
+<!-- release:1.6.9:end -->
+
 <!-- release:1.6.8:start -->
 ## 1.6.8
 
