@@ -359,7 +359,7 @@ Then open `http://127.0.0.1:8001` locally.
 - **📋 Channels:** see which channels and groups are included in queries.
 - **🔎 Search:** inspect matching results and diagnostic details without playback.
 - **👁️ Credentials:** reveal or hide the login password while entering it.
-- **🔄 Sync now:** trigger channel discovery and catch-up indexing after joining a channel or group or adding a video. The button stays disabled with **Syncing...** until discovery and indexing finish, then shows **Sync done!**. Failures appear in the dashboard, and sync progress is logged.
+- **🔄 Sync now:** stop the current indexing cycle and start fresh channel discovery and catch-up indexing. Fully indexed channels and groups are checked for new content before unfinished history scans resume from saved progress. The dashboard shows **Syncing...** until indexing finishes, then **Sync done!**. Click **Sync now** again to restart a running sync. Failures appear in the dashboard, and sync progress is logged.
 - **📝 Activity:** review recent addon activity.
 
 For connection and indexing details, use the protected endpoint:
@@ -416,3 +416,4 @@ between player requests. Already-running requests or database batches may finish
 Playback startup and video downloads do not wait for the background scan limiter.
 The pause applies at every concurrency setting; continuous playback can delay
 indexing and leave new videos unavailable until playback stops.
+
