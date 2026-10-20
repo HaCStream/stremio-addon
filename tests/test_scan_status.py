@@ -232,3 +232,49 @@ async def test_queue_with_empty_history_and_failed_check(gateway):
         await gateway.scan_new_messages(1, 1)
     assert gateway.queue(1) is None
 
+
+
+@pytest.mark.asyncio
+async def test_scan_times_track_head_snapshot_not_backfill_completion(gateway, monkeypatch):
+    import stremio_addon.telegram as telegram
+    clock = [1000]
+    monkeypatch.setattr(telegram.time, 'time', lambda: clock[0])
+    class Client:
+        async def get_messages(self, entity, limit, offset_id):
+            return [SimpleNamespace(id=i) for i in range(100, 0, -1)] if not offset_id else []
+    gateway.client = Client()
+    await gateway.scan_history(1, 1)
+    assert gateway.store.search_cutoff({1}) is None  # History still incomplete.
+    clock[0] = 5000
+    await gateway.scan_history(1, 1)
+    assert gateway.store.search_cutoff({1}) == 880  # Keep the first head snapshot.
+    await gateway.scan_new_messages(1, 1)
+    assert gateway.store.search_cutoff({1}) == 4880  # Successful catch-up refreshes it.
+
+
+@pytest.mark.asyncio
+async def test_failed_scan_does_not_advance_recent_cutoff(gateway):
+    gateway.store.save_checkpoint(dict(channel=1, oldest=1, newest=10, complete=1))
+    gateway.store.save_scan_time(1, 1000)
+    class Client:
+        async def get_messages(self, *args, **kwargs):
+            raise OSError('Unavailable')
+    gateway.client = Client()
+    with pytest.raises(OSError):
+        await gateway.scan_new_messages(1, 1)
+    assert gateway.store.search_cutoff({1}) == 880
+
+
+@pytest.mark.asyncio
+async def test_empty_chat_is_checked_again_and_discovers_new_upload(gateway):
+    gateway.store.save_checkpoint(dict(channel=1, oldest=0, newest=0, complete=1))
+    calls = []
+    class Client:
+        async def get_messages(self, entity, **kwargs):
+            calls.append(kwargs)
+            return [SimpleNamespace(id=7)]
+    gateway.client = Client()
+    await gateway.scan_new_messages(1, 1)
+    assert len(calls) == 2
+    assert gateway.store.checkpoint(1)['newest'] == 7
+    assert gateway.store.search_cutoff({1}) is not None

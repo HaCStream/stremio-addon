@@ -32,7 +32,7 @@ For all settings and reverse proxy details, see the [configuration guide](DOCS.m
 
 ## 🔎 Search before indexing finishes
 
-Search combines your index with Telegram on demand, including after a completed scan. Results are merged without duplicating files; live hits do not mark a chat fully indexed. Identical Telegram queries are cached for **60 seconds**, so new uploads can take up to that long to appear. Live searches share indexing's request limiter and yield to playback. After a **12-second live-search budget** or upstream failure, available local/partial results are returned.
+Search combines your index with Telegram on demand. After all selected chats are fully indexed, searches with local matches check Telegram only for recent messages since the oldest verified scan, with a **two-minute overlap**. Incomplete indexes or missing local matches still search full history. Saved scan times survive restarts; existing installations use full-history searches until their chats have been checked. Results are merged without duplicating files; live hits do not mark a chat fully indexed. Identical Telegram queries are cached for **60 seconds**, so new uploads can take up to that long to appear. Live searches share indexing's request limiter and yield to playback. After a **12-second live-search budget** or upstream failure, available local/partial results are returned.
 
 Movie matching accepts strong titles without a year, ranks exact title/year matches first and avoids conflicting release years. Episode-only videos can inherit their series name from the group/channel title; manual mappings stay authoritative.
 

@@ -385,3 +385,110 @@ async def test_live_preserves_saved_show_identity_and_searches_offset_episode(se
     rows, _ = await hybrid.match('series', 'tt7654321:1:2')
     assert {r['message'] for r in rows} == {4, 2}
     await tmdb.http.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('complete,has_match,expected_recent', [(True, True, True), (False, True, False), (True, False, False)])
+async def test_recent_policy_for_catalog_and_public_lookup(setup, complete, has_match, expected_recent):
+    _, store, tg, metadata, hybrid = setup
+    source = user()
+    tg.client = Client([source], [message(source, 2)])
+    await tg.discover()
+    store.save_checkpoint(dict(channel=123, oldest=1, newest=1, complete=int(complete)))
+    checked = int(time.time()) - 60
+    store.save_scan_time(123, checked)
+    if has_match:
+        store.upsert(video(1, 'Test.Movie.2024.mp4', channel=123))
+    async def resolve(*args):
+        return ['Test Movie'], 2024
+    metadata.resolve = resolve
+    # Exercise both paths independently: missing local matches must stay full-history.
+    for lookup in ('catalog', 'public'):
+        if not has_match:
+            store.delete('tg:123:2')
+        tg.search_cache.clear()
+        tg.client.requests.clear()
+        if lookup == 'catalog':
+            rows, _ = await hybrid.catalog('Test Movie', kind='movie')
+        else:
+            rows, _ = await hybrid.match('movie', 'tt1234567')
+        assert rows
+        request = tg.client.requests[0]
+        assert isinstance(request, functions.messages.SearchGlobalRequest)
+        assert (request.min_date is not None) == expected_recent
+        if expected_recent:
+            assert request.min_date.timestamp() == checked - 120
+
+
+@pytest.mark.asyncio
+async def test_recent_scope_filter_and_cache_are_separate_from_full_search(setup):
+    _, store, tg, _, _ = setup
+    source = channel()
+    peer = utils.get_peer_id(source)
+    now = int(time.time())
+    old, new = message(source, 1), message(source, 2)
+    old.date = datetime.fromtimestamp(now - 3600, timezone.utc)
+    requests = []
+    class ScopedClient(Client):
+        async def __call__(self, request):
+            assert isinstance(request, functions.messages.SearchRequest)
+            requests.append(request)
+            return types.messages.Messages(messages=[old, new], topics=[], chats=[source], users=[])
+    tg.client = ScopedClient([source], [old, new])
+    await tg.discover()
+    tg.channel_ids = frozenset({peer})
+    recent = await tg.search('Test Movie', since=now - 120)
+    assert recent == [f'tg:{peer}:2']
+    assert requests[0].min_date.timestamp() == now - 120
+    assert requests[0].peer is source
+    assert not store.get(f'tg:{peer}:1')
+    full = await tg.search('Test Movie')
+    assert set(full) == {f'tg:{peer}:1', f'tg:{peer}:2'}
+    assert len(tg.search_cache) == 2
+
+
+@pytest.mark.asyncio
+async def test_cutoff_requires_every_chat_complete_and_verified_and_persists(setup):
+    cfg, store, tg, _, _ = setup
+    tg.channels = {123: user(), 456: user(456)}
+    for peer, checked in ((123, 1000), (456, 2000)):
+        store.save_checkpoint(dict(channel=peer, oldest=1, newest=10, complete=1))
+        store.save_scan_time(peer, checked)
+    assert await tg.search_since() is None  # Discovery has not finished this session.
+    tg.discovery_complete = True
+    assert await tg.search_since() == 880
+    store.save_checkpoint(dict(channel=456, oldest=1, newest=10, complete=0))
+    assert await tg.search_since() is None
+    store.save_checkpoint(dict(channel=456, oldest=1, newest=10, complete=1))
+    tg.channels[789] = user(789)
+    assert await tg.search_since() is None
+    tg.channels.pop(789)
+    with store.db:
+        store.db.execute('DELETE FROM scan_times WHERE channel=456')
+    assert await tg.search_since() is None  # Upgrading an old completed index stays safe.
+    store.save_scan_time(456, 2000)
+    reopened = Store(store.path)
+    assert reopened.search_cutoff({123, 456}) == 880
+    await reopened.close()
+    await store.prune_channels({123})
+    assert not store.db.execute('SELECT 1 FROM scan_times WHERE channel=123').fetchone()
+
+
+@pytest.mark.asyncio
+async def test_recent_native_episode_search_uses_existing_matches(setup):
+    _, store, tg, _, hybrid = setup
+    source = channel()
+    peer = utils.get_peer_id(source)
+    tg.channels[peer] = source
+    tg.discovery_complete = True
+    store.upsert(video(1, 'Test.Show.S01E01.mp4', channel=peer))
+    store.save_checkpoint(dict(channel=peer, oldest=1, newest=1, complete=1))
+    store.save_scan_time(peer, 1000)
+    calls = []
+    async def live(*args, **kwargs):
+        calls.append(kwargs['since'])
+        return set()
+    hybrid.live = live
+    await hybrid.match('series', series_id('Test Show') + ':1:1')
+    await hybrid.match('series', series_id('Test Show') + ':1:2')
+    assert calls == [880, None]

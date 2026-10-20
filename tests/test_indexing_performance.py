@@ -291,7 +291,7 @@ def clock(monkeypatch):
             self.now += delay
             await asyncio.sleep(0)
     clock = Clock()
-    monkeypatch.setattr(module, 'time', SimpleNamespace(monotonic=clock.monotonic))
+    monkeypatch.setattr(module, 'time', SimpleNamespace(monotonic=clock.monotonic, time=clock.monotonic))
     monkeypatch.setattr(module, 'asyncio', SimpleNamespace(**(vars(asyncio) | {'sleep': clock.sleep})))
     return clock
 

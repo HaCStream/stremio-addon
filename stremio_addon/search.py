@@ -13,7 +13,13 @@ class HybridSearch:
         self.store, self.gateway, self.metadata = store, gateway, metadata
         self.timeout = 12
 
-    async def live(self, queries, aliases=(), season=None, episode=None):
+    async def cutoff(self, rows):
+        # Missing matches always retain a full-history search, even after sync.
+        if not rows or not hasattr(self.gateway, 'search_since'):
+            return None
+        return await self.gateway.search_since()
+
+    async def live(self, queries, aliases=(), season=None, episode=None, *, since=None):
         if not hasattr(self.gateway, 'search'):
             return set()
         ids = set()
@@ -29,12 +35,12 @@ class HybridSearch:
                         continue
                     visited.add(channel)
                     for marker in markers:
-                        ids.update(await self.gateway.search(marker, channel))
+                        ids.update(await self.gateway.search(marker, channel, since=since))
 
             # Query a confidently named source first for episode-only captions.
             await named_sources()
             for query in list(dict.fromkeys(q.strip() for q in queries if q.strip()))[:8]:
-                ids.update(await self.gateway.search(query))
+                ids.update(await self.gateway.search(query, since=since))
                 # Initial dialog discovery may have progressed during the RPC.
                 await named_sources()
 
@@ -53,7 +59,8 @@ class HybridSearch:
                 return self.store.grouped_catalog(kind, allowed, query, 0, skip + 100)
             return [r for r in self.store.catalog(query, 0, skip + 100) if r['channel'] in allowed]
         rows = await self.store.run(local)
-        live = await self.live([query], [query]) if query.strip() else set()
+        since = await self.cutoff(rows)
+        live = await self.live([query], [query], since=since) if query.strip() else set()
 
         def merged():
             # Re-read after Telegram results are upserted, so grouped series and
@@ -78,7 +85,13 @@ class HybridSearch:
     async def match(self, kind, identifier):
         # Snapshot local matches first. Live results are persisted without advancing
         # checkpoints, then passed through the same authoritative identity rules.
-        rows = await self.metadata.match(self.store, kind, identifier) if not identifier.startswith('tg:') else []
+        native = re.fullmatch(r'(tg:series:[0-9a-f]{24}):(\d+):(\d+)', identifier)
+        if native:
+            rows = await self.store.run(self.store.series, native[1], set(self.gateway.channels), int(native[2]), int(native[3]))
+        else:
+            rows = await self.metadata.match(self.store, kind, identifier) if not identifier.startswith('tg:') else []
+        rows = [r for r in rows if r['channel'] in self.gateway.channels]
+        since = await self.cutoff(rows)
         live = set()
         if hasattr(self.gateway, 'search'):
             try:
@@ -96,7 +109,7 @@ class HybridSearch:
                     queries.extend(titles)
                     if kind == 'movie' and year:
                         queries.extend(f'{title} {year}' for title in titles)
-                live = await self.live(queries, aliases if kind == 'series' else (), season, episode)
+                live = await self.live(queries, aliases if kind == 'series' else (), season, episode, since=since)
             except Exception as exc:
                 log.warning('Live search metadata unavailable: error=%s', type(exc).__name__)
         native = re.fullmatch(r'(tg:series:[0-9a-f]{24}):(\d+):(\d+)', identifier)

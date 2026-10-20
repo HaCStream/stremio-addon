@@ -3,6 +3,7 @@ import hashlib
 import logging
 import time
 from collections import deque
+from datetime import datetime, timezone
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
@@ -37,6 +38,7 @@ class Telegram:
         self.client = BackgroundClient(StringSession(settings.session), settings.api_id, settings.api_hash, flood_sleep_threshold=0)
         self.channels = {}
         self.known_channels = None
+        self.discovery_complete = False
         self.status = {'phase': 'connecting', 'last_error': None}
         self.cache = settings.data / 'chunks'
         self.cache.mkdir(exist_ok=True)
@@ -221,6 +223,7 @@ class Telegram:
                         self.sync_status['id'], len(self.channels), duration)
 
     async def discover(self):
+        self.discovery_complete = False
         channels = {}
         dialogs = self.client.iter_dialogs().__aiter__()
         while True:
@@ -253,6 +256,7 @@ class Telegram:
             logger.info('Removing unavailable channels from index: channels=%s', len(removed))
             await self.store.prune_channels(removed, wait_background=self.wait_background)
         self.known_channels = set(channels)
+        self.discovery_complete = True
 
     def index(self, channel, message):
         item = f'tg:{channel}:{message.id}'
@@ -317,7 +321,12 @@ class Telegram:
             accessible = isinstance(entity, types.User) and not entity.deleted
         return accessible and (self.channel_ids is None or utils.get_peer_id(entity) in self.channel_ids)
 
-    async def search(self, query, channel=None):
+    async def search_since(self):
+        if not self.discovery_complete:
+            return None
+        return await self.store.run(self.store.search_cutoff, set(self.channels))
+
+    async def search(self, query, channel=None, *, since=None):
         """Bounded, coalesced live search; cache successful queries for 60 seconds.
 
         Every RPC uses the scanner's pacing/cooldown and yields to playback.
@@ -328,7 +337,7 @@ class Telegram:
         if channel is not None and (channel not in self.channels or
                                    (self.channel_ids is not None and channel not in self.channel_ids)):
             return []
-        key = (query, channel)
+        key = (query, channel, since)
         now = time.monotonic()
         self.search_cache = {k: v for k, v in self.search_cache.items() if v[0] > now}
         cached = self.search_cache.get(key)
@@ -355,15 +364,21 @@ class Telegram:
         finally:
             self.search_tasks.pop(key, None)
 
-    async def _search(self, query, channel):
+    async def _search(self, query, channel, since=None):
         ids = []
         if channel is not None:
             # A matching group name supplies context for episode-only videos.
-            messages = await self.background_operation(
-                self.client.get_messages, self.channels[channel], search=query,
-                limit=100)
+            if since is None:
+                messages = await self.background_operation(
+                    self.client.get_messages, self.channels[channel], search=query, limit=100)
+            else:
+                response = await self.background_operation(self.client, functions.messages.SearchRequest(
+                    peer=self.channels[channel], q=query, filter=types.InputMessagesFilterEmpty(),
+                    min_date=datetime.fromtimestamp(since, timezone.utc), max_date=None,
+                    offset_id=0, add_offset=0, limit=100, max_id=0, min_id=0, hash=0))
+                messages = getattr(response, 'messages', [])
             for message in messages:
-                if isinstance(message, types.Message):
+                if isinstance(message, types.Message) and (since is None or message.date.timestamp() >= since):
                     item = await self.store.run(self.index, channel, message)
                     if item:
                         ids.append(item)
@@ -373,13 +388,14 @@ class Telegram:
             if not sources:
                 raise RuntimeError('Selected chats have not been discovered yet')
             for source in sources:
-                ids.extend(await self._search(query, source))
+                ids.extend(await self._search(query, source, since))
             return list(dict.fromkeys(ids))
         offset_rate, offset_id, offset_peer = 0, 0, types.InputPeerEmpty()
         cursors = set()
         for _ in range(3):
             response = await self.background_operation(self.client, functions.messages.SearchGlobalRequest(
-                q=query, filter=types.InputMessagesFilterEmpty(), min_date=None,
+                q=query, filter=types.InputMessagesFilterEmpty(),
+                min_date=datetime.fromtimestamp(since, timezone.utc) if since is not None else None,
                 max_date=None, offset_rate=offset_rate, offset_peer=offset_peer,
                 offset_id=offset_id, limit=100))
             entities = {utils.get_peer_id(e): e for e in [*getattr(response, 'chats', []),
@@ -387,6 +403,8 @@ class Telegram:
                         if self.permitted(e)}
             messages = [m for m in getattr(response, 'messages', []) if isinstance(m, types.Message)]
             for message in messages:
+                if since is not None and message.date.timestamp() < since:
+                    continue
                 peer = utils.get_peer_id(message.peer_id)
                 entity = entities.get(peer)
                 if entity is None:
@@ -432,8 +450,9 @@ class Telegram:
     async def scan_new_messages(self, channel, entity):
         p = self.store.checkpoint(channel)
         self.new_remaining[channel] = None
-        if p['newest']:
+        if p['newest'] or p['complete']:
             self.scan_phase()
+            checked_at = time.time()
             # Freeze the target: a busy group cannot extend this catch-up forever.
             latest = await self.background_operation(self.client.get_messages, entity, limit=1, offset_id=0)
             target = latest[0].id if latest else p['newest']
@@ -458,6 +477,7 @@ class Telegram:
                 if not history_pending:
                     self.pending_channels.discard(channel)
                 self.scan_phase()
+            await self.store.run(self.store.save_scan_time, channel, checked_at)
         self.new_remaining[channel] = 0
 
     async def scan_history(self, channel, entity):
@@ -465,6 +485,7 @@ class Telegram:
         if not p['complete']:
             self.scan_phase()
             # Keep a look-ahead within Telegram's 100-message page: 99 indexed + 1 proof of backlog.
+            checked_at = time.time() if not p['oldest'] else None
             batch = await self.background_operation(self.client.get_messages, entity, limit=100, offset_id=p['oldest'])
             if batch:
                 self.history_remaining[channel] = max(0, batch[0].id)
@@ -474,6 +495,8 @@ class Telegram:
                 p['complete'] = 1
             await self.wait_background()
             await self.store.run(self.index_batch, channel, batch[:99], p, 'history')
+            if checked_at is not None:
+                await self.store.run(self.store.save_scan_time, channel, checked_at)
             if batch:
                 self.history_remaining[channel] = max(0, p['oldest'] - 1)
             if p['complete']:

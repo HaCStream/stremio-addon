@@ -299,6 +299,7 @@ class Store:
           year INTEGER, season INTEGER, episode INTEGER, imdb TEXT, quality TEXT, file_id TEXT, search TEXT);
         CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(id UNINDEXED, text, tokenize='unicode61');
         CREATE TABLE IF NOT EXISTS checkpoints(channel INTEGER PRIMARY KEY, oldest INTEGER, newest INTEGER, complete INTEGER DEFAULT 0);
+        CREATE TABLE IF NOT EXISTS scan_times(channel INTEGER PRIMARY KEY, checked_at REAL NOT NULL);
         CREATE TABLE IF NOT EXISTS mappings(id TEXT PRIMARY KEY, imdb TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS tmdb_series(series_id TEXT PRIMARY KEY,
           tmdb INTEGER, imdb TEXT, name TEXT, status TEXT NOT NULL,
@@ -456,6 +457,7 @@ class Store:
         def checkpoint(channel):
             with self.db:
                 self.db.execute('DELETE FROM checkpoints WHERE channel=?', (channel,))
+                self.db.execute('DELETE FROM scan_times WHERE channel=?', (channel,))
 
         for channel in params:
             while True:
@@ -551,6 +553,18 @@ class Store:
             self.db.execute('INSERT OR REPLACE INTO checkpoints VALUES (:channel,:oldest,:newest,:complete)', p)
 
 
+    def save_scan_time(self, channel, checked_at):
+        with self.transaction():
+            self.db.execute('INSERT OR REPLACE INTO scan_times VALUES (?,?)', (channel, checked_at))
 
-
-
+    def search_cutoff(self, channels):
+        if not channels:
+            return None
+        rows = self.db.execute(
+            'SELECT p.complete,t.checked_at FROM checkpoints p '
+            'LEFT JOIN scan_times t ON t.channel=p.channel WHERE p.channel IN ('
+            + ','.join('?' for _ in channels) + ')', tuple(channels)).fetchall()
+        if len(rows) != len(channels) or any(not r['complete'] or r['checked_at'] is None for r in rows):
+            return None
+        # Overlap the oldest verified snapshot to cover timestamp boundaries.
+        return max(0, int(min(r['checked_at'] for r in rows)) - 120)
