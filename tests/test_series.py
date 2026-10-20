@@ -136,7 +136,7 @@ def test_search_index_rebuild_repairs_old_caption_only_entries(tmp_path):
     assert store.catalog('hashminia')[0]['id'] == entry['id']
     assert store.catalog('השמיניה')[0]['id'] == entry['id']
     assert store.catalog('another show')[0]['id'] == missing['id']
-    assert store.db.execute('PRAGMA user_version').fetchone()[0] == 3
+    assert store.db.execute('PRAGMA user_version').fetchone()[0] == 4
     store.db.close()
     store = Store(path)
     assert len(store.catalog()) == 2
@@ -235,7 +235,7 @@ def test_caption_title_migrates_version_two_without_rescan(tmp_path):
 
     # Reopening preserves the migrated titles and creates no duplicate FTS rows.
     store = Store(path)
-    assert store.db.execute('PRAGMA user_version').fetchone()[0] == 3
+    assert store.db.execute('PRAGMA user_version').fetchone()[0] == 4
     assert store.db.execute('SELECT count(*) FROM search').fetchone()[0] == 2
     assert len(store.series(series_id('השמיניה'), {-100})) == 2
     store.db.close()
@@ -277,7 +277,7 @@ def test_repair_malformed_titles_in_already_migrated_index(tmp_path):
         assert runtime.store.get(movie['id'])['title'] == movie['title']
         assert runtime.store.explicit('tt1234567')[0]['id'] == broken['id']
         assert runtime.store.checkpoint(-100)['complete'] == 1
-        assert runtime.store.db.execute('PRAGMA user_version').fetchone()[0] == 3
+        assert runtime.store.db.execute('PRAGMA user_version').fetchone()[0] == 4
     store = Store(path)
     assert len(store.series(series_id('השמיניה'), {-100})) == 2
     assert store.db.execute('SELECT count(*) FROM search').fetchone()[0] == 3

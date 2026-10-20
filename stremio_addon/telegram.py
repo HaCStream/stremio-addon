@@ -7,9 +7,9 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 from uuid import uuid4
-from telethon import TelegramClient, events, errors, types, utils
+from telethon import TelegramClient, events, errors, types, utils, functions
 from telethon.sessions import StringSession
-from .core import parse_title
+from .core import parse_title, source_name, normalize, title_from_text
 from .chunk_cache import ChunkCache
 
 logger = logging.getLogger("stremio_addon.telegram")
@@ -18,6 +18,7 @@ CHUNK = 512 * 1024
 
 # Scope pacing to scanner tasks; playback uses the same client without this gate.
 _background_pacer = ContextVar('telegram_background_pacer', default=None)
+_live_search = ContextVar('telegram_live_search', default=False)
 
 
 class BackgroundClient(TelegramClient):
@@ -50,6 +51,10 @@ class Telegram:
         self.task = None
         self.reconcile_cursor = ''
         self.scan_interval_seconds = settings.scan_interval_seconds
+        self.catalog_indexing_enabled = settings.catalog_indexing_enabled
+        self.active_searches = 0
+        self.search_idle = asyncio.Event()
+        self.search_idle.set()
         self.pending_channels = set()
         self.history_remaining = {}
         self.new_remaining = {}
@@ -62,6 +67,10 @@ class Telegram:
         self.flood_until = 0
         self.scan_request_interval = 1.0
         self.scan_request_successes = 0
+        self.search_cache = {}
+        self.search_tasks = {}
+        self.search_timeout = 12
+        self.search_ttl = 60
 
     @contextmanager
     def playback(self):
@@ -84,6 +93,11 @@ class Telegram:
             if delay > 0:
                 await asyncio.sleep(delay)
             elif not self.active_playbacks:
+                if not _live_search.get():
+                    await self.search_idle.wait()
+                    # Playback may have started while waiting for searches.
+                    if self.active_playbacks or time.monotonic() < self.playback_until:
+                        continue
                 return
 
     async def background_operation(self, function, *args, **kwargs):
@@ -97,13 +111,18 @@ class Telegram:
 
     async def background_request(self, function, *args, **kwargs):
         while True:
+            # Never hold the RPC lock while waiting for playback, a search or
+            # pacing. Live requests can then take the next available RPC slot.
+            await self.wait_background()
+            delay = max(self.next_scan_request, self.flood_until) - time.monotonic()
+            if delay > 0:
+                await asyncio.sleep(delay)
+                continue
             async with self.scan_request_lock:
-                while True:
-                    await self.wait_background()
-                    delay = max(self.next_scan_request, self.flood_until) - time.monotonic()
-                    if delay <= 0:
-                        break
-                    await asyncio.sleep(delay)
+                if (self.active_playbacks or time.monotonic() < self.playback_until or
+                        (not _live_search.get() and self.active_searches) or
+                        time.monotonic() < max(self.next_scan_request, self.flood_until)):
+                    continue
                 try:
                     result = await function(*args, **kwargs)
                 except errors.FloodWaitError as exc:
@@ -172,12 +191,16 @@ class Telegram:
         if me.bot:
             await self.client.disconnect()
             raise RuntimeError('A Telegram user session is required, not a bot')
+        self.me = me
         self.client.add_event_handler(self.update, events.NewMessage())
         self.client.add_event_handler(self.update, events.MessageEdited())
         self.client.add_event_handler(self.deleted, events.MessageDeleted())
         self.task = asyncio.create_task(self.run())
 
     async def close(self):
+        for task in self.search_tasks.values():
+            task.cancel()
+        await asyncio.gather(*self.search_tasks.values(), return_exceptions=True)
         if self.task:
             self.task.cancel()
             try:
@@ -227,10 +250,14 @@ class Telegram:
                           and not entity.left)
             is_group = (isinstance(entity, types.Chat) and not entity.left
                         and not entity.deactivated and not entity.migrated_to)
-            if is_channel or is_group:
+            if is_channel or is_group or (isinstance(entity, types.User) and not entity.deleted):
                 channel_id = utils.get_peer_id(entity)
                 if self.channel_ids is None or channel_id in self.channel_ids:
                     channels[channel_id] = entity
+                    self.channels[channel_id] = entity
+        me = getattr(self, 'me', None)
+        if me is not None and self.permitted(me):
+            channels[utils.get_peer_id(me)] = me
         self.channels = channels
         self.history_remaining = {c: n for c, n in self.history_remaining.items() if c in channels}
         self.new_remaining = {c: n for c, n in self.new_remaining.items() if c in channels}
@@ -252,12 +279,30 @@ class Telegram:
         caption = message.message or ''
         filename = file.name or ''
         row = dict(id=item, channel=channel, message=message.id, filename=filename, caption=caption,
-                   channel_name=self.channels[channel].title, size=doc.size, mime=doc.mime_type or 'application/octet-stream', date=int(message.date.timestamp()), file_id=str(doc.id))
-        row.update(parse_title(filename, caption))
+                   channel_name=source_name(self.channels[channel], channel), size=doc.size, mime=doc.mime_type or 'application/octet-stream', date=int(message.date.timestamp()), file_id=str(doc.id))
+        entity = self.channels[channel]
+        parsed = parse_title(filename, caption)
+        context = getattr(entity, 'title', '') or ''
+        if parsed['season'] is not None and context and not title_from_text(parsed['title']):
+            parsed['title'] = title_from_text(context) or parsed['title']
+            previous = self.store.get(item)
+            if previous and previous['series_id'] and self.store.db.execute(
+                    "SELECT 1 FROM tmdb_series WHERE series_id=? AND status IN ('auto','manual','blocked')", (previous['series_id'],)).fetchone():
+                # A contextual title must not replace a saved show identity on
+                # reconciliation, playback refresh or a live-search upsert.
+                parsed['title'] = previous['title']
+        row.update(parsed)
         self.store.upsert(row)
+        return row['id']
 
     async def update(self, event):
         await self.wait_background()
+        if self.channel_ids is not None and event.chat_id not in self.channel_ids:
+            return
+        if event.chat_id not in self.channels:
+            entity = await self.background_operation(event.get_chat)
+            if entity and self.permitted(entity):
+                self.channels[event.chat_id] = entity
         if event.chat_id in self.channels:
             await self.store.run(self.index, event.chat_id, event.message)
 
@@ -266,6 +311,135 @@ class Telegram:
         if event.chat_id in self.channels:
             for message in event.deleted_ids:
                 await self.store.run(self.store.delete, f'tg:{event.chat_id}:{message}')
+        elif event.chat_id is None:
+            # Non-channel message IDs share the account-wide namespace. Telegram
+            # omits their chat ID in UpdateDeleteMessages (including private chats).
+            def remove():
+                with self.store.transaction():
+                    for message in event.deleted_ids:
+                        for row in self.store.db.execute(
+                                'SELECT id FROM videos WHERE message=? AND channel>?',
+                                (message, -1000000000000)).fetchall():
+                            self.store.delete(row['id'])
+            await self.store.run(remove)
+
+    def permitted(self, entity):
+        if isinstance(entity, types.Channel):
+            accessible = not entity.left and not entity.min
+        elif isinstance(entity, types.Chat):
+            accessible = not entity.left and not entity.deactivated and not entity.migrated_to
+        else:
+            accessible = isinstance(entity, types.User) and not entity.deleted
+        return accessible and (self.channel_ids is None or utils.get_peer_id(entity) in self.channel_ids)
+
+    async def search(self, query, channel=None):
+        """Bounded, coalesced live search; cache successful queries for 60 seconds.
+
+        Every RPC uses the scanner's pacing/cooldown and yields to playback.
+        Search results populate videos only, never history checkpoints.
+        """
+        if not query.strip() and channel is None:
+            return []
+        if channel is not None and (channel not in self.channels or
+                                   (self.channel_ids is not None and channel not in self.channel_ids)):
+            return []
+        key = (query, channel)
+        now = time.monotonic()
+        self.search_cache = {k: v for k, v in self.search_cache.items() if v[0] > now}
+        cached = self.search_cache.get(key)
+        if cached:
+            return cached[1]
+        task = self.search_tasks.get(key)
+        if task is None:
+            if len(self.search_tasks) >= 16:
+                raise RuntimeError('Telegram search busy')
+            task = asyncio.create_task(self._cached_search(key))
+            self.search_tasks[key] = task
+            # Retrieve exceptions even if every waiting HTTP request disconnects.
+            task.add_done_callback(lambda done: done.exception() if not done.cancelled() else None)
+        return await asyncio.shield(task)
+
+    async def _cached_search(self, key):
+        self.active_searches += 1
+        self.search_idle.clear()
+        token = _live_search.set(True)
+        try:
+            ids = await asyncio.wait_for(self._search(*key), self.search_timeout)
+            if len(self.search_cache) >= 256:
+                self.search_cache.pop(next(iter(self.search_cache)))
+            self.search_cache[key] = (time.monotonic() + self.search_ttl, ids)
+            logger.debug('Telegram live search completed: results=%s scoped=%s', len(ids), key[1] is not None)
+            return ids
+        finally:
+            _live_search.reset(token)
+            self.active_searches -= 1
+            if not self.active_searches:
+                self.search_idle.set()
+            self.search_tasks.pop(key, None)
+
+    async def _search(self, query, channel):
+        ids = []
+        if channel is not None:
+            # A matching group name supplies context for episode-only videos.
+            messages = await self.background_operation(
+                self.client.get_messages, self.channels[channel], search=query,
+                limit=100)
+            for message in messages:
+                if isinstance(message, types.Message):
+                    item = await self.store.run(self.index, channel, message)
+                    if item:
+                        ids.append(item)
+            return ids
+        if self.channel_ids is not None:
+            sources = [c for c in sorted(self.channels) if c in self.channel_ids]
+            if not sources:
+                raise RuntimeError('Selected chats have not been discovered yet')
+            for source in sources:
+                ids.extend(await self._search(query, source))
+            return list(dict.fromkeys(ids))
+        offset_rate, offset_id, offset_peer = 0, 0, types.InputPeerEmpty()
+        cursors = set()
+        for _ in range(3):
+            response = await self.background_operation(self.client, functions.messages.SearchGlobalRequest(
+                q=query, filter=types.InputMessagesFilterEmpty(), min_date=None,
+                max_date=None, offset_rate=offset_rate, offset_peer=offset_peer,
+                offset_id=offset_id, limit=100))
+            entities = {utils.get_peer_id(e): e for e in [*getattr(response, 'chats', []),
+                                                         *getattr(response, 'users', [])]
+                        if self.permitted(e)}
+            messages = [m for m in getattr(response, 'messages', []) if isinstance(m, types.Message)]
+            for message in messages:
+                peer = utils.get_peer_id(message.peer_id)
+                entity = entities.get(peer)
+                if entity is None:
+                    continue
+                self.channels[peer] = entity
+                item = await self.store.run(self.index, peer, message)
+                if item and item not in ids:
+                    ids.append(item)
+                if len(ids) >= 100:
+                    return ids
+            if isinstance(response, types.messages.Messages) or len(getattr(response, 'messages', [])) < 100 or not messages:
+                break
+            last = messages[-1]
+            peer = utils.get_peer_id(last.peer_id)
+            entity = entities.get(peer)
+            if entity is None:
+                break
+            offset_rate = getattr(response, 'next_rate', None) or int(last.date.timestamp())
+            offset_id = last.id
+            cursor = (peer, offset_id, offset_rate)
+            if cursor in cursors:
+                break
+            cursors.add(cursor)
+            offset_peer = utils.get_input_peer(entity)
+        return ids
+
+    def series_sources(self, aliases):
+        names = {normalize(title_from_text(alias)) for alias in aliases if normalize(title_from_text(alias))}
+        return [channel for channel, entity in self.channels.items()
+                if getattr(entity, 'title', None)
+                and normalize(title_from_text(entity.title)) in names][:3]
 
     async def scan(self, channel, entity):
         await self.scan_new_messages(channel, entity)
@@ -274,7 +448,8 @@ class Telegram:
     def scan_phase(self):
         if time.monotonic() < self.flood_until:
             return
-        self.status.update(phase='indexing' if self.pending_channels else 'checking',
+        self.status.update(phase=('indexing' if self.pending_channels else 'checking')
+                           if self.catalog_indexing_enabled else 'on_demand',
                            pending_channels=len(self.pending_channels))
 
     async def scan_new_messages(self, channel, entity):
@@ -398,6 +573,12 @@ class Telegram:
                     self.pending_channels.intersection_update(self.channels)
                     discover_needed = False
                     logger.info('Channel discovery complete: channels=%s', len(self.channels))
+                if not self.catalog_indexing_enabled:
+                    self.status.update(phase='on_demand', last_error=None, pending_channels=0)
+                    self.finish_sync()
+                    discover_needed = True
+                    await asyncio.sleep(self.scan_interval_seconds)
+                    continue
                 self.scan_phase()
                 cycle_error = None
                 async def process(channel, entity):

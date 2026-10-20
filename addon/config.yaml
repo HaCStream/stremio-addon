@@ -1,7 +1,7 @@
 name: Stremio Telegram
 version: "1.6.10"
 slug: stremio_telegram
-description: A self-hosted addon that connects to your Telegram user account, discovers joined public and private broadcast channels, and indexes uploaded videos for browsing, searching, and streaming through your server
+description: A self-hosted addon that connects to your Telegram user account, builds catalogs from account chats and searches Telegram on demand for video playback
 
 url: https://github.com/HaCStream/stremio-addon
 image: ghcr.io/hacstream/stremio-addon
@@ -28,6 +28,7 @@ options:
   TELEGRAM_APP_API_HASH: ""
   USER_SESSION_STRING: ""
   CACHE_MB: 512
+  CATALOG_INDEXING_ENABLED: true
   SCAN_INTERVAL_SECONDS: 300
   CHANNEL_IDS: ""
   DISPLAY_COLLECTION: false
@@ -50,6 +51,7 @@ schema:
   TELEGRAM_APP_API_HASH: password
   USER_SESSION_STRING: password
   CACHE_MB: int(0,)
+  CATALOG_INDEXING_ENABLED: bool
   SCAN_INTERVAL_SECONDS: int(1,)
   CHANNEL_IDS: str?
   DISPLAY_COLLECTION: bool

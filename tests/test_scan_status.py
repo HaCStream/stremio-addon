@@ -123,6 +123,22 @@ def test_scan_interval_ha_translation_and_env_precedence(monkeypatch):
     assert Settings.env().scan_interval_seconds == 600
 
 
+def test_optional_catalog_indexing_environment_and_ha_options(monkeypatch):
+    for name, value in dict(ADDON_URL='http://localhost', ADDON_ACCESS_KEY='a'*32,
+                            TELEGRAM_APP_API_ID='1', TELEGRAM_APP_API_HASH='hash',
+                            USER_SESSION_STRING='session', AI_SEARCH_ENABLED='false').items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv('CATALOG_INDEXING_ENABLED', raising=False)
+    assert Settings.env().catalog_indexing_enabled is True
+    env = {}
+    configure({'CATALOG_INDEXING_ENABLED': False}, env)
+    assert env['CATALOG_INDEXING_ENABLED'] == 'False'
+    monkeypatch.setenv('CATALOG_INDEXING_ENABLED', env['CATALOG_INDEXING_ENABLED'])
+    assert Settings.env().catalog_indexing_enabled is False
+    configure({'CATALOG_INDEXING_ENABLED': True}, env)
+    assert env['CATALOG_INDEXING_ENABLED'] == 'False'
+
+
 @pytest.mark.asyncio
 async def test_confirmed_backlog_continues_without_waiting_for_scan_interval(gateway, monkeypatch):
     gateway.scan_interval_seconds = 7200
