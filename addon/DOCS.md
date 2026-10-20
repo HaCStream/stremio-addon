@@ -176,7 +176,7 @@ Reference: [Home Assistant add-on configuration](https://developers.home-assista
 
 ### On-demand search
 
-Startup discovers chat identities without reading message history. Text searches, AI title searches and movie/episode source lookups query Telegram across history and save discovered videos locally. Queries are cached for 60 seconds and coalesced when identical requests overlap. Opening a series fetches more relevant episodes on demand. Collections and episode lists show cached discoveries and may be incomplete.
+Startup discovers chat identities without reading message history. Text searches, AI title searches and movie/episode source lookups query Telegram across history and save discovered videos locally. Queries are cached for 60 seconds and coalesced when identical requests overlap. Opening/reloading a series paginates searches only for that show: up to eight 100-message pages within twelve seconds per open. Videos and page cursors are saved atomically. Subsequent opens resume older pages, even after a restart; overlapping opens share a job. First pages refresh after 60 seconds without resetting older progress, and completed scopes are cached for 60 seconds. The account history is never crawled automatically. Collections and episode lists show cached discoveries and may be incomplete.
 
 The Telegram phase has a 12-second budget and returns available cached/partial matches on failure. Searches share adaptive request pacing and yield to playback. Public metadata lookups may add time. Existing cached videos and manual mappings survive upgrades; source filtering still removes inaccessible/excluded entries on discovery.
 

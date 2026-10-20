@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import json
 import logging
 import time
 from collections import deque
@@ -58,6 +59,7 @@ class Telegram:
         self.scan_request_successes = 0
         self.search_cache = {}
         self.search_tasks = {}
+        self.series_tasks = {}
         self.search_timeout = 12
         self.search_ttl = 60
 
@@ -145,9 +147,10 @@ class Telegram:
         self.request_refresh()
 
     async def close(self):
-        for task in self.search_tasks.values():
+        tasks = [*self.search_tasks.values(), *self.series_tasks.values()]
+        for task in tasks:
             task.cancel()
-        await asyncio.gather(*self.search_tasks.values(), return_exceptions=True)
+        await asyncio.gather(*tasks, return_exceptions=True)
         if self.task:
             self.task.cancel()
             try:
@@ -380,6 +383,142 @@ class Telegram:
             cursors.add(cursor)
             offset_peer = utils.get_input_peer(entity)
         return ids
+
+    async def search_series(self, identifier, aliases):
+        """Resume only this show's searches, at most eight pages / twelve seconds."""
+        aliases = tuple(dict.fromkeys(a.strip() for a in aliases if a.strip()))[:4]
+        if not aliases:
+            return
+        self.ensure_sources()
+        key = identifier
+        task = self.series_tasks.get(key)
+        if task is None:
+            if len(self.series_tasks) >= 16:
+                return
+            task = asyncio.create_task(self._series_job(key, aliases))
+            self.series_tasks[key] = task
+            task.add_done_callback(lambda done: done.exception() if not done.cancelled() else None)
+        await asyncio.shield(task)
+
+    async def _series_job(self, key, aliases):
+        try:
+            await asyncio.wait_for(self._series_pages(key, aliases), self.search_timeout)
+        except Exception as exc:
+            logger.warning('Series pagination paused: error=%s', type(exc).__name__)
+        finally:
+            self.series_tasks.pop(key, None)
+
+    async def _series_pages(self, identifier, aliases):
+        if self.channel_ids is not None and not self.discovery_complete and self.task:
+            await asyncio.shield(self.task)
+        failed = set()
+        for _ in range(8):
+            # Recompute after each page: discovery/global hits can reveal a named chat.
+            scopes = {(alias, None) for alias in aliases} if self.channel_ids is None else {
+                (alias, channel) for alias in aliases for channel in self.channels if channel in self.channel_ids}
+            scopes.update(('', channel) for channel in self.series_sources(aliases))
+            now = time.time()
+            def next_page():
+                ready = []
+                for query, channel in scopes:
+                    if (query, channel) in failed:
+                        continue
+                    state = self.store.series_page(identifier, query, channel)
+                    if state and state['complete'] and now - state['head_checked_at'] < self.search_ttl:
+                        continue
+                    ready.append((state['updated_at'] if state else 0, query, channel or 0, state))
+                return min(ready, key=lambda r: r[:3]) if ready else None
+            selected = await self.store.run(next_page)
+            if selected is None:
+                return
+            _, query, channel, state = selected
+            channel = channel or None
+            head = state is None or now - state['head_checked_at'] >= self.search_ttl
+            cursor = {} if head else json.loads(state['cursor'])
+            try:
+                messages, entities, following, complete = await self._series_page(query, channel, cursor)
+            except Exception as exc:
+                failed.add((query, channel))
+                if cursor and isinstance(exc, (errors.ChannelPrivateError, errors.ChannelInvalidError,
+                                               errors.PeerIdInvalidError, errors.UserIdInvalidError)):
+                    # A removed/changed offset peer cannot be resumed. Retry from
+                    # the head on a later open; keep every already cached video.
+                    def reset():
+                        with self.store.transaction():
+                            self.store.save_series_page(identifier, query, channel, {}, False, time.time(), 0)
+                    await self.store.run(reset)
+                logger.warning('Series search page unavailable: error=%s', type(exc).__name__)
+                continue
+            for peer, entity in entities.items():
+                if self.permitted(entity):
+                    self.channels[peer] = entity
+            # Cache the page and its cursor atomically. Cancellation cannot skip data.
+            if head and state and not state['complete']:
+                # Refresh recent uploads without losing the older-history cursor.
+                saved_cursor, saved_complete = json.loads(state['cursor']), False
+            else:
+                saved_cursor, saved_complete = following, complete
+            def save():
+                with self.store.transaction():
+                    for message in messages:
+                        peer = channel if channel is not None else utils.get_peer_id(message.peer_id)
+                        entity = entities.get(peer) or self.channels.get(peer)
+                        if entity is not None and self.permitted(entity):
+                            self.index(peer, message)
+                    self.store.save_series_page(identifier, query, channel, saved_cursor, saved_complete,
+                                                time.time(), now if head else state['head_checked_at'])
+            await self.store.run(save)
+
+    async def _series_page(self, query, channel, cursor):
+        if channel is not None:
+            entity = self.channels.get(channel)
+            if entity is None or not self.permitted(entity):
+                raise RuntimeError('Series source unavailable')
+            page = await self.background_operation(self.client.get_messages, entity, search=query,
+                                                   offset_id=cursor.get('offset_id', 0), limit=100)
+            messages = [m for m in page if isinstance(m, types.Message)]
+            complete = len(page) < 100
+            following = {'offset_id': messages[-1].id} if messages and not complete else {}
+            entities = {channel: entity}
+        else:
+            saved = cursor.get('peer')
+            peer = types.InputPeerEmpty()
+            if saved:
+                kind = saved['kind']
+                if kind == 'channel':
+                    peer = types.InputPeerChannel(saved['id'], saved['hash'])
+                elif kind == 'user':
+                    peer = types.InputPeerUser(saved['id'], saved['hash'])
+                elif kind == 'chat':
+                    peer = types.InputPeerChat(saved['id'])
+                elif kind == 'self':
+                    peer = types.InputPeerSelf()
+            response = await self.background_operation(self.client, functions.messages.SearchGlobalRequest(
+                q=query, filter=types.InputMessagesFilterEmpty(), min_date=None, max_date=None,
+                offset_rate=cursor.get('offset_rate', 0), offset_peer=peer,
+                offset_id=cursor.get('offset_id', 0), limit=100))
+            raw = getattr(response, 'messages', [])
+            messages = [m for m in raw if isinstance(m, types.Message)]
+            entities = {utils.get_peer_id(e): e for e in [*getattr(response, 'chats', []), *getattr(response, 'users', [])]}
+            complete = isinstance(response, types.messages.Messages) or len(raw) < 100
+            following = {}
+            if messages and not complete:
+                last = messages[-1]
+                entity = entities.get(utils.get_peer_id(last.peer_id))
+                offset_peer = utils.get_input_peer(entity)
+                if isinstance(offset_peer, types.InputPeerChannel):
+                    saved = {'kind': 'channel', 'id': offset_peer.channel_id, 'hash': offset_peer.access_hash}
+                elif isinstance(offset_peer, types.InputPeerUser):
+                    saved = {'kind': 'user', 'id': offset_peer.user_id, 'hash': offset_peer.access_hash}
+                elif isinstance(offset_peer, types.InputPeerChat):
+                    saved = {'kind': 'chat', 'id': offset_peer.chat_id}
+                else:
+                    saved = {'kind': 'self'}
+                following = {'offset_id': last.id, 'offset_rate': getattr(response, 'next_rate', None)
+                             or int(last.date.timestamp()), 'peer': saved}
+        if not complete and (not following or following == cursor):
+            raise RuntimeError('Telegram series pagination did not advance')
+        return messages, entities, following, complete
 
     def series_sources(self, aliases):
         names = {normalize(title_from_text(alias)) for alias in aliases if normalize(title_from_text(alias))}

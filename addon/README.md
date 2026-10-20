@@ -32,7 +32,7 @@ For all settings and reverse proxy details, see the [configuration guide](DOCS.m
 
 ## 🔎 Search on demand
 
-Searches query Telegram across history and save discovered videos. Identical queries are cached for **60 seconds**; simultaneous duplicates share one request. Opening a series fetches more relevant episodes on demand. Collections and episode lists contain discovered items and may be incomplete. Existing cached videos and manual mappings survive upgrades.
+Searches query Telegram across history and save discovered videos. Identical queries are cached for **60 seconds**; simultaneous duplicates share one request. Opening/reloading a series loads up to **eight 100-message pages within twelve seconds** for that show. Page cursors and discoveries are saved together; reopen to continue, including after a restart. Duplicate opens share a job, and recent first pages refresh after 60 seconds while retaining older progress. No account-wide crawl runs. Collections and episode lists contain discovered items and may be incomplete. Existing cached videos and manual mappings survive upgrades.
 
 Telegram searches have a **12-second phase budget** and return available cached/partial results on a timeout or failure. Movie matching accepts strong missing-year titles; episode-only videos can use a group/channel name as their series title. Saved mappings remain authoritative.
 

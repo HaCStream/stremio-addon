@@ -97,7 +97,10 @@ class OnDemandSearch:
                     queries.extend(titles)
                     if kind == 'movie' and year:
                         queries.extend(f'{title} {year}' for title in titles)
-                live = await self.live(queries, aliases if kind == 'series' else (), season, episode)
+                if kind == 'series' and season is None and hasattr(self.gateway, 'search_series'):
+                    await self.gateway.search_series(identifier, aliases)
+                else:
+                    live = await self.live(queries, aliases if kind == 'series' else (), season, episode)
             except Exception as exc:
                 log.warning('Live search metadata unavailable: error=%s', type(exc).__name__)
         native = re.fullmatch(r'(tg:series:[0-9a-f]{24}):(\d+):(\d+)', identifier)
@@ -116,7 +119,10 @@ class OnDemandSearch:
 
     async def show(self, identifier):
         aliases, _, _, _ = await self.metadata.search_target(self.store, 'series', identifier)
-        await self.live(aliases, aliases)
+        if hasattr(self.gateway, 'search_series'):
+            await self.gateway.search_series(identifier, aliases)
+        else:
+            await self.live(aliases, aliases)
         rows = await self.store.run(self.store.series, identifier, set(self.gateway.channels))
         self.queue_matches(rows)
         return rows

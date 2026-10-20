@@ -291,6 +291,10 @@ class Store:
           year INTEGER, season INTEGER, episode INTEGER, imdb TEXT, quality TEXT, file_id TEXT, search TEXT);
         CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(id UNINDEXED, text, tokenize='unicode61');
         CREATE TABLE IF NOT EXISTS checkpoints(channel INTEGER PRIMARY KEY, oldest INTEGER, newest INTEGER, complete INTEGER DEFAULT 0);
+        CREATE TABLE IF NOT EXISTS series_search_pages(
+          series TEXT, query TEXT, channel INTEGER, cursor TEXT NOT NULL,
+          complete INTEGER NOT NULL, updated_at REAL NOT NULL, head_checked_at REAL NOT NULL,
+          PRIMARY KEY(series,query,channel));
         CREATE TABLE IF NOT EXISTS mappings(id TEXT PRIMARY KEY, imdb TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS tmdb_series(series_id TEXT PRIMARY KEY,
           tmdb INTEGER, imdb TEXT, name TEXT, status TEXT NOT NULL,
@@ -448,6 +452,7 @@ class Store:
         def checkpoint(channel):
             with self.db:
                 self.db.execute('DELETE FROM checkpoints WHERE channel=?', (channel,))
+                self.db.execute('DELETE FROM series_search_pages WHERE channel=?', (channel,))
 
         for channel in params:
             while True:
@@ -541,3 +546,12 @@ class Store:
     def save_checkpoint(self, p):
         with self.transaction():
             self.db.execute('INSERT OR REPLACE INTO checkpoints VALUES (:channel,:oldest,:newest,:complete)', p)
+
+    def series_page(self, series, query, channel):
+        row = self.db.execute('SELECT * FROM series_search_pages WHERE series=? AND query=? AND channel=?',
+                              (series, query, channel or 0)).fetchone()
+        return dict(row) if row else None
+
+    def save_series_page(self, series, query, channel, cursor, complete, updated_at, head_checked_at):
+        self.db.execute('INSERT OR REPLACE INTO series_search_pages VALUES (?,?,?,?,?,?,?)',
+                        (series, query, channel or 0, json.dumps(cursor), int(complete), updated_at, head_checked_at))

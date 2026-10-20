@@ -217,7 +217,7 @@ def create_app_with_runtime(runtime):
                 rows = [row]
                 if kind == 'series' and row['series_id']:
                     identifier = row['series_id']
-                    rows = await app.state.store.run(app.state.store.series, identifier, set(app.state.tg.channels))
+                    rows = await app.state.runtime.search.show(identifier)
         results(request, rows)
         return {'meta': await meta(rows[0], kind, rows if identifier else None, identifier) if rows else None}
 
