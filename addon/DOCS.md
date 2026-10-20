@@ -43,19 +43,19 @@ Set these options in the add-on's Configuration tab:
 | --- | --- |
 | `ADDON_URL` | External HTTPS base URL of your reverse proxy |
 | `DEV_UI_ENABLED` | Enable the read-only Developer UI (default `true`) |
-| `SKIP_DEV_UI_AUTH` | Open the dashboard without a key (default `false`); anyone with access can search and request a sync |
+| `SKIP_DEV_UI_AUTH` | Open the dashboard without a key (default `false`); anyone with access can search and refresh chats |
 | `ADDON_ACCESS_KEY` | At least 32 random URL-safe characters |
 | `TELEGRAM_APP_API_ID` | Positive Telegram application ID |
 | `TELEGRAM_APP_API_HASH` | Telegram application hash |
 | `USER_SESSION_STRING` | Complete Telethon StringSession |
 | `DISPLAY_COLLECTION` | Show Telegram collections on the main screen (default `false`); search remains available. Restart and refresh/reinstall the addon in your client after changing it |
 | `CACHE_MB` | Optional cache limit in MiB, default `512` |
-| `CHANNEL_IDS` | Optional comma-separated chat IDs restricting indexing and live search; blank scans all accessible account chats |
+| `CHANNEL_IDS` | Optional comma-separated chat IDs restricting search; blank searches all accessible account chats |
 
 For example, set `CHANNEL_IDS: "-1001234567890,-1009876543210"` and restart
-the add-on. Only those chats will be indexed and searched live.
+the add-on. Only those chats will be searched.
 Existing catalog entries from excluded channels are removed on discovery;
-selecting them again restarts their history scan. Telegram posts are unchanged.
+selecting them again allows searches to discover videos. Telegram posts are unchanged.
 Regular groups use negative IDs (for example, `-123456789`); supergroups and channels use `-100…` IDs. Private chats, bots and Saved Messages use positive user IDs. The `CHANNEL_IDS` option accepts all of these.
 
 The settings use their exact uppercase names. The application
@@ -83,10 +83,10 @@ access logs that expose credential-bearing URLs. Install in Stremio with:
 https://YOUR_DOMAIN/YOUR_ADDON_ACCESS_KEY/manifest.json
 ```
 
-The protected `/<your-api-key>/status` endpoint shows Telegram indexing progress.
+The protected `/<your-api-key>/status` endpoint shows Telegram cached-video counts.
 Files containing episode markers such as `S01E02`, `S01 E02`, or
 `עונה 1 פרק 2` appear once per show in **Telegram Series**. Opening a show lists
-its indexed episodes in season/episode order; multiple files for the same episode
+its cached episodes in season/episode order; multiple files for the same episode
 appear as separate playback choices. These files are excluded from **Telegram Videos**.
 AI series results use the same grouping. Existing entries are updated automatically
 on the first startup after upgrading, without a Telegram rescan.
@@ -116,7 +116,7 @@ tab. Developer UI settings are grouped under **Developer UI**. Enabling AI adds
 separate **Telegram AI Movies** and **Telegram AI Series** catalogs. Gemini uses
 Google Search to find up to five titles per category, then the addon returns only
 titles matched in the local Telegram index. Only the search description is sent
-to Gemini; no indexed content or video data is sent.
+to Gemini; no cached content or video data is sent.
 `REQUIRE_AI_SUFFIX_FOR_AI_SEARCH` defaults to `true`: finish your description
 with a separate `AI` word to start AI search, for example
 `someone relives the same day AI`. The suffix is case insensitive (`AI`, `Ai`,
@@ -130,15 +130,15 @@ No background AI indexing or embeddings are generated. The Developer UI search d
 separate movie and series matches. The new catalogs may require reinstalling or refreshing the addon in your
 client. Google Search grounding uses your Gemini project's quota and billing.
 The Developer UI is available through the host port mapped to 8001. Sign in with the
-`DEV_UI_PASSWORD` (or `ADDON_ACCESS_KEY` when the password is blank) to inspect channels, indexing progress, recent searches, and
+`DEV_UI_PASSWORD` (or `ADDON_ACCESS_KEY` when the password is blank) to inspect channels, cached-video counts, recent searches, and
 read-only search results. It does not expose playback URLs and does not use
 `ADDON_URL` for its own requests.
 Set `SKIP_DEV_UI_AUTH: true` under the Developer UI options to open without a password. Keep
 dashboard network access restricted when using this option. The Stremio API key
 is still required for addon endpoints.
 The add-on page's **Open Web UI** button opens the dashboard on its standard
-port by default. Use **Sync now** in the dashboard after joining a channel or group or adding a video
-to trigger channel discovery and catch-up indexing immediately.
+port by default. Use **Refresh chats** in the dashboard after joining a channel or group
+to refresh chat identities without reading message history.
 
 SQLite and video chunks persist under `/data/stremio`; Supervisor keeps options
 separately in `/data/options.json`. Restart the add-on after changing options.
@@ -159,7 +159,7 @@ can create temporary files in the permitted directory.
 
 CI compiles the profile without loading it into the runner's kernel. Runtime
 verification requires an AppArmor-enabled Home Assistant host: check startup,
-channel sync, playback/cache, Developer UI, enabled metadata/AI features, and
+chat discovery, playback/cache, Developer UI, enabled metadata/AI features, and
 shutdown. Review host audit logs for denials with
 `journalctl _TRANSPORT=audit -g 'apparmor="DENIED"'`. When diagnosing new image
 requirements, temporarily add `complain` to the profile flags on a test host,
@@ -174,55 +174,12 @@ Reference: [Home Assistant add-on configuration](https://developers.home-assista
 
 
 
-### Telegram scan status and interval
+### On-demand search
 
-`SCAN_INTERVAL_SECONDS` is a positive integer (default `300`): the delay after a
-completed Telegram scan cycle before checking again. Set it in the environment
-or Home Assistant options and restart. Initial scanning and confirmed history
-backlogs continue promptly; **Sync now** bypasses the interval. Cycles never overlap.
+Startup discovers chat identities without reading message history. Text searches, AI title searches and movie/episode source lookups query Telegram across history and save discovered videos locally. Queries are cached for 60 seconds and coalesced when identical requests overlap. Opening a series fetches more relevant episodes on demand. Collections and episode lists show cached discoveries and may be incomplete.
 
-In **Chats**, **Videos** is the number of indexed videos and **Queue**
-estimates the messages still awaiting scanning using message ID ranges.
-It includes deleted-message gaps (and can overestimate in basic groups with shared
-message IDs), requires no extra Telegram requests, and reaches **0** when caught up.
-**Checking…** means the scanner has not checked that channel yet.
-Counts are refreshed by the scanner; refreshing the dashboard reads its current progress.
+The Telegram phase has a 12-second budget and returns available cached/partial matches on failure. Searches share adaptive request pacing and yield to playback. Public metadata lookups may add time. Existing cached videos and manual mappings survive upgrades; source filtering still removes inaccessible/excluded entries on discovery.
 
-The Developer UI shows **Checking for updates** during discovery and backlog
-checks, **Indexing** only after Telegram confirms unscanned messages, and
-**Up to date** once all groups finish. **Scan incomplete** means a scan failed.
-Unscanned messages may or may not contain videos. History checkpoints survive
-restarts, and each catch-up uses a fixed latest-message target so new arrivals
-are handled on the next cycle. TMDB matching runs independently of these states.
+The Developer UI's **Refresh chats** reloads source identities without scanning messages. Chats refresh automatically at startup and on a search after their five-minute identity cache expires. There is no periodic history scan or reconciliation. Edits/deletions update cached entries when events arrive, and playback revalidates files. Missed events can leave stale cached entries.
 
-
-## ⚡ Indexing speed and playback priority
-
-Chats are scanned **one at a time**, with fully indexed chats
-refreshed before unfinished history scans. Background Telegram requests are
-spaced by at least **1 second** after each response, including requests made
-inside pagination and channel discovery. A flood wait pauses background
-requests for Telegram's requested delay plus **1 second**, then doubles the
-request spacing up to **5 seconds**. After every **20 successful requests**, the
-spacing decreases by **0.25 seconds**, down to the 1-second baseline. These are
-local pacing choices, not guaranteed Telegram limits; flood waits can still occur.
-Sync now keeps the cooldown and pacing; restarting the add-on resets adaptive
-spacing. Old `INDEXING_CONCURRENCY` values are ignored and can be removed.
-
-History pages fetch up to 100 messages: 99 to index and one look-ahead message
-that confirms whether unscanned history remains, avoiding a second request just
-for look-ahead.
-
-Indexing saves each page and its checkpoint in one database transaction.
-Background scans, live searches, reconciliation, live-message indexing and automatic TMDB
-matching pause during playback and resume after a **2-second grace period**
-between player requests. Already-running requests or database batches may finish.
-Playback startup and video downloads do not wait for the background scan limiter.
-Continuous playback can delay indexing and leave new videos unavailable until playback stops.
-
-
-### Hybrid search and account coverage
-
-With `CHANNEL_IDS` blank, indexing covers accessible channels, groups, private chats, bots, Saved Messages and archived dialogs. It examines history for video attachments without processing tag replies. Text searches and movie/episode source lookups also query Telegram. If all selected chats are fully indexed and local matches exist, Telegram searches are restricted to messages newer than the oldest verified scan snapshot minus two minutes. Incomplete indexes, missing scan times or no local matches use full-history searches. Scan times are persisted independently of history checkpoints, are captured before checking the latest messages, and advance only after a successful scan; live hits never advance them. Identical successful queries are cached for 60 seconds; concurrent identical requests share one query. Matches are persisted without advancing scan checkpoints and deduplicated by chat/message ID. Live searches use the background request limiter, pause for playback and have a 12-second phase budget; failures return available local/partial results.
-
-Unfiltered searches inspect up to three pages of 100 messages, collecting up to 100 videos per query; filtered searches query selected chats directly. Movie matching accepts strong titles with missing years and conservative subtitle variants, ranks matching years first and rejects known conflicting years. Episode-only messages can use a group/channel title as their series name. Contact names are not series titles. Saved show mappings and offsets remain authoritative. See the main README for details and limits.
+`SCAN_INTERVAL_SECONDS` and `INDEXING_CONCURRENCY` are obsolete and ignored. Remove them from existing option/environment files. Cached-video counts replace indexing/queue progress. Automatic TMDB matching processes only user-requested shows, not the entire cache.

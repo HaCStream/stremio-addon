@@ -12,7 +12,7 @@ from stremio_addon.app import create_app_with_runtime
 from stremio_addon.core import Settings, Store, parse_title, series_id, source_name
 from stremio_addon.metadata import Metadata
 from stremio_addon.runtime import Runtime
-from stremio_addon.search import HybridSearch
+from stremio_addon.search import OnDemandSearch
 from stremio_addon.telegram import Telegram
 from tests.test_series import video
 
@@ -78,7 +78,7 @@ async def setup(tmp_path):
         return await function(*args, **kwargs)
     tg.background_operation = operation
     metadata = Metadata()
-    hybrid = HybridSearch(store, tg, metadata)
+    hybrid = OnDemandSearch(store, tg, metadata)
     yield cfg, store, tg, metadata, hybrid
     await tg.close()
     await metadata.http.aclose()
@@ -156,6 +156,7 @@ async def test_discovery_saved_messages_bots_and_contact_update_delete(setup):
     assert set(tg.channels) == {100, 200, 300}
     assert source_name(me) == 'Saved Messages'
     m = message(contact, 7)
+    assert await store.run(tg.index, 200, m)
     await tg.update(SimpleNamespace(chat_id=200, message=m))
     assert store.get('tg:200:7')
     await tg.deleted(SimpleNamespace(chat_id=None, deleted_ids=[7]))
@@ -388,107 +389,110 @@ async def test_live_preserves_saved_show_identity_and_searches_offset_episode(se
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('complete,has_match,expected_recent', [(True, True, True), (False, True, False), (True, False, False)])
-async def test_recent_policy_for_catalog_and_public_lookup(setup, complete, has_match, expected_recent):
-    _, store, tg, metadata, hybrid = setup
-    source = user()
-    tg.client = Client([source], [message(source, 2)])
-    await tg.discover()
-    store.save_checkpoint(dict(channel=123, oldest=1, newest=1, complete=int(complete)))
-    checked = int(time.time()) - 60
-    store.save_scan_time(123, checked)
-    if has_match:
-        store.upsert(video(1, 'Test.Movie.2024.mp4', channel=123))
-    async def resolve(*args):
-        return ['Test Movie'], 2024
-    metadata.resolve = resolve
-    # Exercise both paths independently: missing local matches must stay full-history.
-    for lookup in ('catalog', 'public'):
-        if not has_match:
-            store.delete('tg:123:2')
-        tg.search_cache.clear()
-        tg.client.requests.clear()
-        if lookup == 'catalog':
-            rows, _ = await hybrid.catalog('Test Movie', kind='movie')
-        else:
-            rows, _ = await hybrid.match('movie', 'tt1234567')
-        assert rows
-        request = tg.client.requests[0]
-        assert isinstance(request, functions.messages.SearchGlobalRequest)
-        assert (request.min_date is not None) == expected_recent
-        if expected_recent:
-            assert request.min_date.timestamp() == checked - 120
-
-
-@pytest.mark.asyncio
-async def test_recent_scope_filter_and_cache_are_separate_from_full_search(setup):
+async def test_startup_and_idle_discover_chats_without_reading_history(setup):
     _, store, tg, _, _ = setup
-    source = channel()
-    peer = utils.get_peer_id(source)
-    now = int(time.time())
-    old, new = message(source, 1), message(source, 2)
-    old.date = datetime.fromtimestamp(now - 3600, timezone.utc)
-    requests = []
-    class ScopedClient(Client):
-        async def __call__(self, request):
-            assert isinstance(request, functions.messages.SearchRequest)
-            requests.append(request)
-            return types.messages.Messages(messages=[old, new], topics=[], chats=[source], users=[])
-    tg.client = ScopedClient([source], [old, new])
-    await tg.discover()
-    tg.channel_ids = frozenset({peer})
-    recent = await tg.search('Test Movie', since=now - 120)
-    assert recent == [f'tg:{peer}:2']
-    assert requests[0].min_date.timestamp() == now - 120
-    assert requests[0].peer is source
-    assert not store.get(f'tg:{peer}:1')
-    full = await tg.search('Test Movie')
-    assert set(full) == {f'tg:{peer}:1', f'tg:{peer}:2'}
-    assert len(tg.search_cache) == 2
+    handlers, reads = [], []
+    class LifecycleClient(Client):
+        async def connect(self):
+            pass
+        async def is_user_authorized(self):
+            return True
+        async def get_me(self):
+            return user(999, is_self=True)
+        def add_event_handler(self, callback, builder):
+            handlers.append(type(builder).__name__)
+        async def get_messages(self, *args, **kwargs):
+            reads.append(kwargs)
+            raise AssertionError('Startup must not read message history')
+    tg.client = LifecycleClient([user()])
+    # Old indexes stay available; they must not restart history scans.
+    store.save_checkpoint(dict(channel=123, oldest=100, newest=200, complete=0))
+    await tg.start()
+    first = tg.task
+    assert tg.request_refresh()['id'] == tg.refresh_status['id']
+    await first
+    await asyncio.sleep(.01)
+    assert tg.task.done() and not reads
+    assert set(tg.channels) == {123, 999}
+    assert handlers == ['MessageEdited', 'MessageDeleted']
+    assert store.checkpoint(123)['oldest'] == 100
 
 
 @pytest.mark.asyncio
-async def test_cutoff_requires_every_chat_complete_and_verified_and_persists(setup):
-    cfg, store, tg, _, _ = setup
-    tg.channels = {123: user(), 456: user(456)}
-    for peer, checked in ((123, 1000), (456, 2000)):
-        store.save_checkpoint(dict(channel=peer, oldest=1, newest=10, complete=1))
-        store.save_scan_time(peer, checked)
-    assert await tg.search_since() is None  # Discovery has not finished this session.
-    tg.discovery_complete = True
-    assert await tg.search_since() == 880
-    store.save_checkpoint(dict(channel=456, oldest=1, newest=10, complete=0))
-    assert await tg.search_since() is None
-    store.save_checkpoint(dict(channel=456, oldest=1, newest=10, complete=1))
-    tg.channels[789] = user(789)
-    assert await tg.search_since() is None
-    tg.channels.pop(789)
-    with store.db:
-        store.db.execute('DELETE FROM scan_times WHERE channel=456')
-    assert await tg.search_since() is None  # Upgrading an old completed index stays safe.
-    store.save_scan_time(456, 2000)
-    reopened = Store(store.path)
-    assert reopened.search_cutoff({123, 456}) == 880
-    await reopened.close()
-    await store.prune_channels({123})
-    assert not store.db.execute('SELECT 1 FROM scan_times WHERE channel=123').fetchone()
+async def test_unsolicited_messages_do_not_expand_video_cache(setup):
+    _, store, tg, _, _ = setup
+    tg.channels[123] = user()
+    await tg.update(SimpleNamespace(chat_id=123, message=message(user(), 99)))
+    assert not store.catalog()
 
 
 @pytest.mark.asyncio
-async def test_recent_native_episode_search_uses_existing_matches(setup):
-    _, store, tg, _, hybrid = setup
+async def test_opening_series_discovers_more_episodes_on_demand(setup):
+    _, store, tg, _, search = setup
     source = channel()
     peer = utils.get_peer_id(source)
     tg.channels[peer] = source
-    tg.discovery_complete = True
     store.upsert(video(1, 'Test.Show.S01E01.mp4', channel=peer))
-    store.save_checkpoint(dict(channel=peer, oldest=1, newest=1, complete=1))
-    store.save_scan_time(peer, 1000)
-    calls = []
-    async def live(*args, **kwargs):
-        calls.append(kwargs['since'])
-        return set()
-    hybrid.live = live
-    await hybrid.match('series', series_id('Test Show') + ':1:1')
-    await hybrid.match('series', series_id('Test Show') + ':1:2')
-    assert calls == [880, None]
+    tg.client = Client([source], [message(source, 2, 'S01E02.mp4')])
+    rows = await search.show(series_id('Test Show'))
+    assert {r['episode'] for r in rows} == {1, 2}
+    assert store.checkpoint(peer)['complete'] == 0
+
+
+@pytest.mark.asyncio
+async def test_ai_search_finds_uncached_titles_on_telegram(setup):
+    from stremio_addon.ai_search import AISearch
+    cfg, store, tg, _, search = setup
+    tg.client = Client([user()], [message(user(), 7)])
+    ai = AISearch(cfg, store)
+    async def titles(query):
+        return {'movies': ['Test Movie'], 'series': []}
+    ai.titles = titles
+    ai.lookup = search.discover_titles
+    try:
+        assert not store.catalog()
+        rows = await ai.search('a description', set())
+        assert [r['id'] for r in rows] == ['tg:123:7']
+    finally:
+        await ai.close()
+
+
+@pytest.mark.asyncio
+async def test_metadata_worker_only_matches_user_requested_shows(setup):
+    from unittest.mock import AsyncMock
+    from stremio_addon.tmdb import TMDB
+    cfg, store, tg, _, _ = setup
+    store.upsert(video(1, 'Old.Show.S01E01.mp4'))
+    service = TMDB(cfg, store, tg)
+    service.match_show = AsyncMock()
+    task = asyncio.create_task(service.run())
+    try:
+        await asyncio.sleep(0)
+        service.match_show.assert_not_awaited()
+        requested = dict(series_id=series_id('Requested Show'))
+        service.enqueue([requested, requested])
+        await asyncio.wait_for(service.pending.join(), 1)
+        service.match_show.assert_awaited_once_with(requested['series_id'])
+        with tg.playback():
+            service.enqueue([dict(series_id=series_id('Next Show'))])
+            await asyncio.sleep(0)
+            assert service.match_show.await_count == 1
+        tg.playback_until = 0
+        await asyncio.wait_for(service.pending.join(), 1)
+        assert service.match_show.await_count == 2
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await service.http.aclose()
+
+
+def test_legacy_scan_interval_is_ignored(monkeypatch):
+    from addon.start import configure
+    for key, value in dict(ADDON_URL='https://example.com', ADDON_ACCESS_KEY='a'*32,
+                           TELEGRAM_APP_API_ID='1', TELEGRAM_APP_API_HASH='hash',
+                           USER_SESSION_STRING='session', SCAN_INTERVAL_SECONDS='invalid').items():
+        monkeypatch.setenv(key, value)
+    assert not hasattr(Settings.env(), 'scan_interval_seconds')
+    env = {}
+    configure({'SCAN_INTERVAL_SECONDS': 60}, env)
+    assert 'SCAN_INTERVAL_SECONDS' not in env

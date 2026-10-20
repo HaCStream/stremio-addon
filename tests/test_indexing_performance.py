@@ -23,85 +23,6 @@ async def tg(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_page_commits_fts_and_checkpoint_once_and_rolls_back_on_failure(tg):
-    statements = []
-    def write(fail=False):
-        tg.store.db.set_trace_callback(statements.append)
-        def index(channel, message):
-            tg.store.upsert(video(message.id))
-            if fail and message.id == 3:
-                raise RuntimeError('interrupted page')
-        tg.index = index
-        tg.index_batch(-1, [SimpleNamespace(id=i) for i in range(5, 0, -1)],
-                       dict(channel=-1, oldest=0, newest=0, complete=1), 'history')
-
-    with pytest.raises(RuntimeError, match='interrupted page'):
-        await tg.store.run(write, True)
-    assert tg.store.checkpoint(-1)['oldest'] == 0
-    assert tg.store.catalog('Original') == []
-    assert not tg.store.db.execute('SELECT * FROM search_rows').fetchall()
-    statements.clear()
-    await tg.store.run(write)
-    assert statements.count('COMMIT') == 1
-    assert len(tg.store.catalog('Original')) == 5
-    assert tg.store.checkpoint(-1) == dict(channel=-1, oldest=1, newest=5, complete=1)
-
-
-@pytest.mark.asyncio
-async def test_channels_are_scanned_serially_and_once(tg):
-    tg.channels = {i: i for i in range(11)}
-    active = peak = 0
-    visited = []
-    async def process(channel, entity):
-        nonlocal active, peak
-        visited.append(channel)
-        active += 1
-        peak = max(peak, active)
-        await asyncio.sleep(.001)
-        active -= 1
-    await tg.scan_channels(process)
-    assert peak == 1
-    assert sorted(visited) == list(range(11))
-    assert active == 0
-
-
-@pytest.mark.asyncio
-async def test_failed_channel_does_not_start_another_scan(tg):
-    tg.channels = {1: 1, 2: 2, 3: 3}
-    visited = []
-    async def process(channel, entity):
-        visited.append(channel)
-        raise ValueError('failed scan')
-    with pytest.raises(ValueError, match='failed scan'):
-        await tg.scan_channels(process)
-    assert visited == [1]
-
-
-@pytest.mark.asyncio
-async def test_playback_pauses_fetched_pages_before_database_commit(tg):
-    started, release = asyncio.Event(), asyncio.Event()
-    async def get_messages(*args, **kwargs):
-        started.set()
-        await release.wait()
-        return [SimpleNamespace(id=1)]
-    tg.client = SimpleNamespace(get_messages=get_messages)
-    tg.index = lambda channel, message: tg.store.upsert(video(message.id))
-    task = asyncio.create_task(tg.scan_history(-1, -1))
-    await asyncio.wait_for(started.wait(), 1)
-    with tg.playback():
-        release.set()
-        await asyncio.sleep(.02)
-        assert not task.done()
-        assert tg.store.get('tg:-1:1') is None
-        assert tg.store.checkpoint(-1)['oldest'] == 0
-    assert tg.playback_until > time.monotonic()
-    tg.playback_until = 0  # Skip the real grace interval in this scheduling test.
-    await asyncio.wait_for(task, 1)
-    assert tg.store.get('tg:-1:1')
-    assert tg.store.checkpoint(-1)['complete']
-
-
-@pytest.mark.asyncio
 async def test_multiple_streams_pause_background_until_last_disconnect(tg):
     tg.chunk = AsyncMock(return_value=b'bytes')
     streams = [tg.stream(video(), None, 0, 4) for _ in range(2)]
@@ -170,22 +91,6 @@ async def test_background_flood_wait_is_shared_and_playback_bypasses_it(tg, cloc
     assert all(delay > 0 for delay in clock.delays)
 
 
-@pytest.mark.asyncio
-async def test_automatic_tmdb_matching_waits_for_playback(tg):
-    tmdb = TMDB(SimpleNamespace(tmdb_api_key='key'), tg.store, tg)
-    tmdb._scan_once = AsyncMock()
-    try:
-        with tg.playback():
-            task = asyncio.create_task(tmdb.scan_once())
-            await asyncio.sleep(0)
-            tmdb._scan_once.assert_not_called()
-        tg.playback_until = 0
-        await asyncio.wait_for(task, 1)
-        tmdb._scan_once.assert_awaited_once()
-    finally:
-        await tmdb.http.aclose()
-
-
 def test_removed_concurrency_options_are_ignored(monkeypatch):
     for name, value in dict(ADDON_URL='http://localhost', ADDON_ACCESS_KEY='a'*32,
                            TELEGRAM_APP_API_ID='1', TELEGRAM_APP_API_HASH='hash',
@@ -217,66 +122,6 @@ async def test_playback_startup_gets_priority_but_thumbnail_lookup_does_not(tg):
     assert tg.playback_until == 0
 
 
-
-@pytest.mark.asyncio
-async def test_completed_channels_finish_before_any_history_backlog(tg):
-    tg.channels = {1: 1, 2: 2, 3: 3, 4: 4}
-    for channel in (2, 4):
-        tg.store.save_checkpoint(dict(channel=channel, newest=20, oldest=1, complete=1))
-    finished = set()
-    async def process(channel, entity):
-        if channel in (1, 3):
-            assert {2, 4} <= finished
-        await asyncio.sleep(.01 if channel == 2 else 0)
-        finished.add(channel)
-    await tg.scan_channels(process)
-    assert finished == {1, 2, 3, 4}
-
-
-@pytest.mark.asyncio
-async def test_restarting_manual_sync_drains_sql_and_preserves_checkpoint(tg):
-    import threading
-    started, release = threading.Event(), threading.Event()
-    discoveries = []
-    restarted = asyncio.Event()
-    async def discover():
-        discoveries.append(True)
-        tg.channels = {1: 1}
-        if len(discoveries) == 2:
-            assert tg.store.checkpoint(1)['oldest'] == 100
-            restarted.set()
-            await asyncio.Event().wait()
-    def commit():
-        started.set()
-        assert release.wait(3)
-        tg.store.save_checkpoint(dict(channel=1, newest=200, oldest=100, complete=0))
-    async def scan(channel, entity):
-        await tg.store.run(commit)
-    tg.discover = discover
-    tg.scan_new_messages = AsyncMock()
-    tg.scan_history = scan
-    first = tg.request_sync()
-    task = asyncio.create_task(tg.run())
-    try:
-        async def wait_started():
-            while not started.is_set():
-                await asyncio.sleep(.001)
-        await asyncio.wait_for(wait_started(), 1)
-        second = tg.request_sync()
-        assert second['id'] != first['id']
-        assert tg.request_sync()['id'] == second['id']
-        await asyncio.sleep(.02)
-        assert len(discoveries) == 1
-        release.set()
-        await asyncio.wait_for(restarted.wait(), 1)
-        assert tg.sync_status == dict(second, state='running')
-    finally:
-        release.set()
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-
-
 @pytest.fixture
 def clock(monkeypatch):
     import stremio_addon.telegram as module
@@ -294,38 +139,6 @@ def clock(monkeypatch):
     monkeypatch.setattr(module, 'time', SimpleNamespace(monotonic=clock.monotonic, time=clock.monotonic))
     monkeypatch.setattr(module, 'asyncio', SimpleNamespace(**(vars(asyncio) | {'sleep': clock.sleep})))
     return clock
-
-
-@pytest.mark.asyncio
-async def test_full_history_pages_use_one_rpc_and_keep_lookahead(tg, clock, monkeypatch):
-    from datetime import datetime, timezone
-    from telethon import types, functions
-    entity = types.InputPeerChannel(1, 2)
-    calls, indexed = [], []
-    remote_ids = list(range(1205, 1000, -1))
-    async def wire(sender, request, **kwargs):
-        assert isinstance(request, functions.messages.GetHistoryRequest)
-        calls.append((clock.now, request.limit))
-        ids = [i for i in remote_ids if not request.offset_id or i < request.offset_id][:request.limit]
-        return types.messages.MessagesSlice(count=len(remote_ids), users=[], chats=[], topics=[], messages=[
-            types.Message(id=i, peer_id=types.PeerChannel(1), date=datetime.now(timezone.utc), message='')
-            for i in ids])
-    monkeypatch.setattr(tg.client, '_call', wire)
-    tg.index = lambda channel, message: indexed.append(message.id)
-    await tg.scan_history(1, entity)
-    assert len(calls) == 1
-    assert len(indexed) == 99
-    assert tg.pending_channels == {1}
-    assert not tg.store.checkpoint(1)['complete']
-    await tg.scan_history(1, entity)
-    assert len(calls) == 2
-    await tg.scan_history(1, entity)
-    assert indexed == remote_ids
-    assert tg.store.checkpoint(1)['complete']
-    # Telethon may confirm the final short page with an empty request.
-    assert len(calls) == 4
-    assert all(limit <= 100 for _, limit in calls)
-    assert all(b[0] - a[0] >= 1 for a, b in zip(calls, calls[1:]))
 
 
 @pytest.mark.asyncio
@@ -367,7 +180,7 @@ async def test_adaptive_pacing_caps_and_recovers_gradually(tg, clock):
         return 'ok'
     assert await tg.background_request(request) == 'ok'
     assert intervals == [1, 2, 4, 5, 5]
-    assert tg.status['phase'] == 'checking'
+    assert tg.status['phase'] == 'discovering'
     assert 'retry_after' not in tg.status
     for _ in range(19):
         await tg.background_request(AsyncMock())
@@ -375,26 +188,6 @@ async def test_adaptive_pacing_caps_and_recovers_gradually(tg, clock):
     for _ in range(320):
         await tg.background_request(AsyncMock())
     assert tg.scan_request_interval == 1
-
-
-@pytest.mark.asyncio
-async def test_sync_restart_keeps_rpc_cooldown_and_rate_limited_status(tg, clock, monkeypatch):
-    from telethon import types
-    wire_calls = []
-    async def wire(sender, request, **kwargs):
-        wire_calls.append(clock.now)
-        return types.messages.Dialogs(dialogs=[], messages=[], chats=[], users=[])
-    monkeypatch.setattr(tg.client, '_call', wire)
-    tg.flood_until = clock.now + 22
-    tg.scan_request_interval = 4
-    tg.status['phase'] = 'rate_limited'
-    tg.request_sync()
-    tg.scan_phase()
-    assert tg.status['phase'] == 'rate_limited'
-    # Discovery must respect the same cooldown, including on a fresh manual sync.
-    await tg.discover()
-    assert wire_calls[0] >= 122
-    assert tg.scan_request_interval == 4
 
 
 @pytest.mark.asyncio
@@ -428,5 +221,5 @@ async def test_flood_on_second_rpc_retries_only_that_page(tg, clock, monkeypatch
     assert [m.id for m in result] == list(range(999, 798, -1))
     assert calls == [(0, 100), (900, 101), (900, 103), (800, 105)]
     assert tg.scan_request_interval == 2
-    assert tg.status['phase'] == 'checking'
+    assert tg.status['phase'] == 'discovering'
     assert 'request=GetHistoryRequest' in caplog.text

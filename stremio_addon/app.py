@@ -205,10 +205,10 @@ def create_app_with_runtime(runtime):
         rows = []
         identifier = None
         if kind == 'series' and re.fullmatch(r'tg:series:[0-9a-f]{24}', item):
-            rows = await app.state.store.run(app.state.store.series, item, set(app.state.tg.channels))
+            rows = await app.state.runtime.search.show(item)
             identifier = item
         elif kind == 'series' and re.fullmatch(r'tt\d{7,10}', item):
-            rows = await app.state.metadata.match(app.state.store, kind, item)
+            rows, _ = await app.state.runtime.search.match(kind, item)
             rows = [r for r in rows if r['channel'] in app.state.tg.channels]
             identifier = item
         else:
@@ -248,7 +248,7 @@ def create_app_with_runtime(runtime):
     @app.get('/{key}/status')
     async def status(key):
         auth(key)
-        return {**app.state.tg.status, 'connected': app.state.tg.client.is_connected(), 'channels': len(app.state.tg.channels), 'videos': await app.state.store.run(lambda: app.state.store.db.execute('SELECT count(*) FROM videos').fetchone()[0]), 'checkpoints': [dict(r) for r in app.state.store.db.execute('SELECT * FROM checkpoints')]}
+        return {**app.state.tg.status, 'connected': app.state.tg.client.is_connected(), 'channels': len(app.state.tg.channels), 'videos': await app.state.store.run(lambda: app.state.store.db.execute('SELECT count(*) FROM videos').fetchone()[0]), 'mode': 'on_demand'}
 
     class Mapping(BaseModel):
         imdb: str

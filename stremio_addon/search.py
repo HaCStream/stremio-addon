@@ -1,27 +1,21 @@
-"""Combine the persistent index with bounded, cached Telegram searches."""
+"""Search Telegram on demand and retain discovered videos for repeat use."""
 import asyncio
 import logging
 import re
 
-from .core import title_aliases
-
 log = logging.getLogger(__name__)
 
 
-class HybridSearch:
+class OnDemandSearch:
     def __init__(self, store, gateway, metadata):
         self.store, self.gateway, self.metadata = store, gateway, metadata
         self.timeout = 12
 
-    async def cutoff(self, rows):
-        # Missing matches always retain a full-history search, even after sync.
-        if not rows or not hasattr(self.gateway, 'search_since'):
-            return None
-        return await self.gateway.search_since()
-
-    async def live(self, queries, aliases=(), season=None, episode=None, *, since=None):
+    async def live(self, queries, aliases=(), season=None, episode=None):
         if not hasattr(self.gateway, 'search'):
             return set()
+        if hasattr(self.gateway, 'ensure_sources'):
+            self.gateway.ensure_sources()
         ids = set()
 
         async def run():
@@ -35,12 +29,12 @@ class HybridSearch:
                         continue
                     visited.add(channel)
                     for marker in markers:
-                        ids.update(await self.gateway.search(marker, channel, since=since))
+                        ids.update(await self.gateway.search(marker, channel))
 
             # Query a confidently named source first for episode-only captions.
             await named_sources()
             for query in list(dict.fromkeys(q.strip() for q in queries if q.strip()))[:8]:
-                ids.update(await self.gateway.search(query, since=since))
+                ids.update(await self.gateway.search(query))
                 # Initial dialog discovery may have progressed during the RPC.
                 await named_sources()
 
@@ -59,8 +53,7 @@ class HybridSearch:
                 return self.store.grouped_catalog(kind, allowed, query, 0, skip + 100)
             return [r for r in self.store.catalog(query, 0, skip + 100) if r['channel'] in allowed]
         rows = await self.store.run(local)
-        since = await self.cutoff(rows)
-        live = await self.live([query], [query], since=since) if query.strip() else set()
+        live = await self.live([query], [query]) if query.strip() else set()
 
         def merged():
             # Re-read after Telegram results are upserted, so grouped series and
@@ -80,18 +73,13 @@ class HybridSearch:
             return ordered[skip:skip + 100]
         if not query.strip():
             return rows[skip:skip + 100], live
-        return await self.store.run(merged), live
+        found = await self.store.run(merged)
+        self.queue_matches(found)
+        return found, live
 
     async def match(self, kind, identifier):
-        # Snapshot local matches first. Live results are persisted without advancing
-        # checkpoints, then passed through the same authoritative identity rules.
-        native = re.fullmatch(r'(tg:series:[0-9a-f]{24}):(\d+):(\d+)', identifier)
-        if native:
-            rows = await self.store.run(self.store.series, native[1], set(self.gateway.channels), int(native[2]), int(native[3]))
-        else:
-            rows = await self.metadata.match(self.store, kind, identifier) if not identifier.startswith('tg:') else []
-        rows = [r for r in rows if r['channel'] in self.gateway.channels]
-        since = await self.cutoff(rows)
+        # Persist live discoveries, then apply authoritative saved identity rules.
+        rows = []
         live = set()
         if hasattr(self.gateway, 'search'):
             try:
@@ -109,7 +97,7 @@ class HybridSearch:
                     queries.extend(titles)
                     if kind == 'movie' and year:
                         queries.extend(f'{title} {year}' for title in titles)
-                live = await self.live(queries, aliases if kind == 'series' else (), season, episode, since=since)
+                live = await self.live(queries, aliases if kind == 'series' else (), season, episode)
             except Exception as exc:
                 log.warning('Live search metadata unavailable: error=%s', type(exc).__name__)
         native = re.fullmatch(r'(tg:series:[0-9a-f]{24}):(\d+):(\d+)', identifier)
@@ -117,4 +105,22 @@ class HybridSearch:
             rows = await self.store.run(self.store.series, native[1], set(self.gateway.channels), int(native[2]), int(native[3]))
         elif not identifier.startswith('tg:'):
             rows = await self.metadata.match(self.store, kind, identifier)
-        return [r for r in rows if r['channel'] in self.gateway.channels], live
+        rows = [r for r in rows if r['channel'] in self.gateway.channels]
+        self.queue_matches(rows)
+        return rows, live
+
+    def queue_matches(self, rows):
+        tmdb = getattr(self.metadata, 'tmdb', None)
+        if tmdb and tmdb.key:
+            tmdb.enqueue(rows)
+
+    async def show(self, identifier):
+        aliases, _, _, _ = await self.metadata.search_target(self.store, 'series', identifier)
+        await self.live(aliases, aliases)
+        rows = await self.store.run(self.store.series, identifier, set(self.gateway.channels))
+        self.queue_matches(rows)
+        return rows
+
+    async def discover_titles(self, titles, kind):
+        await self.live(titles, titles if kind == 'series' else ())
+        return set(self.gateway.channels)

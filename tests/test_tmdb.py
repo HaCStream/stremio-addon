@@ -157,32 +157,6 @@ def test_tmdb_key_redacted(configured):
     assert 'secret-tmdb' not in safe_log_text('error secret-tmdb', cfg)
 
 
-@pytest.mark.asyncio
-async def test_background_passes_skip_saved_matches_and_retry_unmatched(configured):
-    _, runtime, _ = configured
-    requests = []
-    def handler(request):
-        requests.append(request)
-        if request.url.path.endswith('/search/tv') and request.url.params.get('query') == 'Unknown':
-            return httpx.Response(200, json={'results': []})
-        return tmdb_response(request)
-    runtime.tmdb.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    await runtime.tmdb.scan_once()
-    total = len(requests)
-    await runtime.tmdb.scan_once()
-    assert len(requests) == total
-    runtime.store.upsert(video(20, 'Unknown.S01E01.mp4'))
-    await runtime.tmdb.scan_once()
-    assert len(requests) == total + 2
-    assert next(s for s in runtime.tmdb.shows() if s['title'] == 'Unknown')['mapping']['status'] == 'unmatched'
-    await runtime.tmdb.scan_once()
-    assert len(requests) == total + 2
-    with runtime.store.db:
-        runtime.store.db.execute('UPDATE tmdb_series SET checked_at=0 WHERE status=?', ('unmatched',))
-    await runtime.tmdb.scan_once()
-    assert len(requests) == total + 4
-
-
 def test_manual_file_mapping_overrides_show_offset(configured):
     cfg, runtime, client = configured
     asyncio.run(runtime.tmdb.select(series_id('השמיניה'), 42, 1, 10))

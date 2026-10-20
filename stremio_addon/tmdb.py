@@ -29,6 +29,8 @@ class TMDB:
         self.http = httpx.AsyncClient(timeout=10)
         self.lock = asyncio.Lock()
         self.retry_at = 0
+        self.pending = asyncio.Queue(maxsize=100)
+        self.queued = set()
 
     async def get(self, path, **params):
         if background_matching.get():
@@ -115,8 +117,9 @@ class TMDB:
     async def match_show(self, identifier):
         async with self.lock:
             previous = await self.store.run(lambda: self.store.db.execute(
-                'SELECT status FROM tmdb_series WHERE series_id=?', (identifier,)).fetchone())
-            if previous and previous['status'] in ('auto', 'manual', 'blocked'):
+                'SELECT status,checked_at FROM tmdb_series WHERE series_id=?', (identifier,)).fetchone())
+            if previous and (previous['status'] in ('auto', 'manual', 'blocked') or
+                             time.time() - previous['checked_at'] < 86400):
                 return
             candidates = await self.candidates(identifier)
             exact = [c for c in candidates if c['exact']]
@@ -187,36 +190,26 @@ class TMDB:
     def excluded_shows(self):
         return {r['series_id'] for r in self.store.db.execute('SELECT series_id FROM tmdb_series')}
 
-    async def scan_once(self):
-        token = background_matching.set(True)
-        try:
-            await self.gateway.wait_background()
-            await self._scan_once()
-        finally:
-            background_matching.reset(token)
-
-    async def _scan_once(self):
-        for show in await self.store.run(self.shows, set(self.gateway.channels)):
-            await self.gateway.wait_background()
-            saved = show['mapping']
-            if saved and (saved['status'] in ('auto', 'manual', 'blocked') or
-                          time.time() - saved['checked_at'] < 86400):
-                continue
-            if time.time() < self.retry_at:
-                break
-            try:
-                await self.match_show(show['series_id'])
-            except (httpx.HTTPError, ValueError, TypeError, KeyError, RuntimeError) as exc:
-                # Never log the request URL: it includes the API key.
-                log.warning('TMDB matching failed: show=%s error=%s', show['series_id'], type(exc).__name__)
-                self.retry_at = max(self.retry_at, time.time() + 60)
-                break
+    def enqueue(self, rows):
+        for row in rows:
+            identifier = row.get('series_id')
+            if identifier and identifier not in self.queued and not self.pending.full():
+                self.queued.add(identifier)
+                self.pending.put_nowait(identifier)
 
     async def run(self):
+        # Process only shows requested by a user, never walk the entire saved cache.
         while True:
+            identifier = await self.pending.get()
+            token = background_matching.set(True)
             try:
-                await self.scan_once()
+                await self.gateway.wait_background()
+                if time.time() >= self.retry_at:
+                    await self.match_show(identifier)
             except Exception as exc:
-                log.warning('TMDB matching pass failed: error=%s', type(exc).__name__)
-            await asyncio.sleep(60)
-
+                log.warning('TMDB requested-show matching failed: error=%s', type(exc).__name__)
+                self.retry_at = max(self.retry_at, time.time() + 60)
+            finally:
+                background_matching.reset(token)
+                self.queued.discard(identifier)
+                self.pending.task_done()

@@ -214,11 +214,11 @@ async def test_group_scan_updates_and_playback_lookup(tmp_path, supergroup):
     gateway = Telegram(cfg, store)
     gateway.client = Client()
     await gateway.discover()
-    await gateway.scan(peer_id, entity)
+    await store.run(gateway.index, peer_id, message)
     entry = store.catalog()[0]
     assert entry['id'] == f'tg:{peer_id}:7'
     assert entry['channel_name'] == 'Group'
-    assert store.checkpoint(peer_id)['complete'] == 1
+    assert store.checkpoint(peer_id)['complete'] == 0
     assert await gateway.message(entry) is message
     message.message = 'Updated movie'
     await gateway.update(SimpleNamespace(chat_id=peer_id, message=message))
@@ -344,8 +344,8 @@ class FakeTelegram:
         self.channels = {-100123: 'channel'}
         self.client = SimpleNamespace(is_connected=lambda: True)
         self.status = {'phase': 'ready'}
-        self.sync_requests = 0
-        self.sync_status = {"id": None, "state": "idle", "error": None}
+        self.refresh_requests = 0
+        self.refresh_status = {"id": None, "state": "idle", "error": None}
     async def start(self):
         self.store.upsert(row())
     async def close(self):
@@ -356,10 +356,10 @@ class FakeTelegram:
         yield b'0123456789'[start:end + 1]
     def queue(self, channel):
         return 0
-    def request_sync(self):
-        self.sync_requests += 1
-        self.sync_status = {"id": "test-sync", "state": "queued", "error": None}
-        return dict(self.sync_status)
+    def request_refresh(self):
+        self.refresh_requests += 1
+        self.refresh_status = {"id": "test-sync", "state": "queued", "error": None}
+        return dict(self.refresh_status)
 
 
 @pytest.mark.parametrize('updates,kind,expected_name,expected_title', [
@@ -404,25 +404,26 @@ def test_debug_dashboard_is_read_only_and_shows_queried_channels(tmp_path):
         assert result['result_count'] == 1
         assert result['channels_queried'][0]['id'] == -100123
         assert result['channels_queried'][0]['videos'] == 1
-        assert result['channels_queried'][0]['queue'] == 0
+        assert 'queue' not in result['channels_queried'][0]
+        assert overview['search_mode'] == 'on_demand'
         assert 'newest_message' not in result['channels_queried'][0]
         assert 'oldest_message' not in result['channels_queried'][0]
         assert result['results_by_channel']['-100123'] == 1
-        assert result['results'][0]['matched_by'] == 'full-text index'
+        assert result['results'][0]['matched_by'] == 'local video cache'
         assert 'url' not in result['results'][0]
         assert client.get('/play/anything', headers=headers).status_code == 404
         assert client.get('/thumb/anything', headers=headers).status_code == 404
-        assert client.get('/api/sync').status_code == 401
-        assert client.post('/api/sync').status_code == 401
-        response = client.post('/api/sync', headers=headers)
+        assert client.get('/api/chats/refresh').status_code == 401
+        assert client.post('/api/chats/refresh').status_code == 401
+        response = client.post('/api/chats/refresh', headers=headers)
         assert response.status_code == 202
-        assert response.json()['sync']['state'] == 'queued'
-        assert client.get('/api/sync', headers=headers).json()['sync']['id'] == 'test-sync'
-        app.state.runtime.tg.sync_status.update(state='done')
-        assert client.get('/api/sync', headers=headers).json()['sync']['state'] == 'done'
-        assert app.state.runtime.tg.sync_requests == 1
+        assert response.json()['refresh']['state'] == 'queued'
+        assert client.get('/api/chats/refresh', headers=headers).json()['refresh']['id'] == 'test-sync'
+        app.state.runtime.tg.refresh_status.update(state='done')
+        assert client.get('/api/chats/refresh', headers=headers).json()['refresh']['state'] == 'done'
+        assert app.state.runtime.tg.refresh_requests == 1
         events = client.get('/api/activity', headers=headers).json()['events']
-        assert events[0]['event'] == 'sync_requested'
+        assert events[0]['event'] == 'chat_refresh_requested'
 
 
 def test_skip_debug_auth_only_applies_to_debug_dashboard(tmp_path):
@@ -436,7 +437,7 @@ def test_skip_debug_auth_only_applies_to_debug_dashboard(tmp_path):
         assert client.get('/api/channels').status_code == 200
         assert client.get('/api/activity').status_code == 200
         assert client.get('/api/search', params={'q': 'שם'}).status_code == 200
-        assert client.post('/api/sync').status_code == 202
+        assert client.post('/api/chats/refresh').status_code == 202
     with TestClient(create_app(cfg, FakeTelegram)) as client:
         assert client.get('/wrong/manifest.json').status_code == 404
         assert client.get(f'/{key}/manifest.json').status_code == 200
@@ -648,217 +649,6 @@ async def test_expired_reference_and_cancellation(tmp_path):
     store.db.close()
 
 
-@pytest.mark.asyncio
-async def test_history_restart_checkpoint(tmp_path):
-    cfg = Settings(8000, 'http://localhost', 'a'*32, 1, 'hash', '', tmp_path, 0)
-    store = Store(tmp_path / 'db')
-    gateway = Telegram(cfg, store)
-    messages = [SimpleNamespace(id=i) for i in range(205, 0, -1)]
-    indexed = []
-    gateway.index = lambda channel, message: indexed.append(message.id)
-    class Client:
-        async def get_messages(self, entity, limit, offset_id=0, min_id=0, max_id=0, reverse=False):
-            found = [m for m in messages if (not offset_id or m.id < offset_id)
-                     and m.id > min_id and (not max_id or m.id < max_id)]
-            return sorted(found, key=lambda m: m.id, reverse=not reverse)[:limit]
-    gateway.client = Client()
-    await gateway.scan(123, None)
-    assert store.checkpoint(123)['oldest'] == 107
-    store.db.close()
-    gateway.store = Store(tmp_path / 'db')
-    messages.insert(0, SimpleNamespace(id=206))
-    await gateway.scan(123, None)
-    await gateway.scan(123, None)
-    assert set(indexed) == set(range(1, 207))
-    assert gateway.store.checkpoint(123) == dict(channel=123, oldest=1, newest=206, complete=1)
-    gateway.store.db.close()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize('failure', [None, 'error', 'revoked', 'flood'])
-async def test_manual_sync_lifecycle(tmp_path, caplog, failure):
-    import asyncio
-    import logging
-    from telethon import errors
-
-    caplog.set_level(logging.INFO, logger='stremio_addon.telegram')
-    store = Store(tmp_path / 'db')
-    gateway = Telegram(Settings(8000, 'http://localhost', 'a'*32, 1, 'hash', '', tmp_path), store)
-    passes = []
-    discoveries = []
-    waiting = asyncio.Event()
-    release = asyncio.Event()
-
-    async def discover():
-        discoveries.append(True)
-        gateway.channels = {-100123: 'channel'}
-
-    async def scan(channel, entity):
-        passes.append(True)
-        if len(passes) == 1:
-            waiting.set()
-            await release.wait()
-            if failure == 'error':
-                raise RuntimeError('private exception payload')
-            if failure == 'revoked':
-                raise errors.SessionRevokedError(request=None)
-            if failure == 'flood':
-                raise errors.FloodWaitError(request=None, capture=0)
-        checkpoint = store.checkpoint(channel)
-        checkpoint['complete'] = int(len(passes) >= 2)
-        store.save_checkpoint(checkpoint)
-
-    async def reconcile():
-        pass
-
-    gateway.discover, gateway.scan_history, gateway.reconcile = discover, scan, reconcile
-    async def catch_up(channel, entity):
-        pass
-    gateway.scan_new_messages = catch_up
-    requested = gateway.request_sync()
-    assert requested['state'] == 'queued'
-    assert gateway.request_sync()['id'] == requested['id']
-    task = asyncio.create_task(gateway.run())
-    try:
-        await asyncio.wait_for(waiting.wait(), 1)
-        assert gateway.sync_status['state'] == 'running'
-        release.set()
-
-        async def finished():
-            while gateway.sync_status['state'] in ('queued', 'running'):
-                await asyncio.sleep(.01)
-        await asyncio.wait_for(finished(), 8)
-        if failure in ('error', 'revoked'):
-            assert gateway.sync_status['state'] == 'failed'
-            assert 'Sync failed' in caplog.text
-            assert 'private exception payload' not in caplog.text
-            if failure == 'revoked':
-                with pytest.raises(RuntimeError, match='session revoked'):
-                    gateway.request_sync()
-        else:
-            assert gateway.sync_status['state'] == 'done'
-            assert len(passes) == 2
-            assert len(discoveries) == (2 if failure == 'flood' else 1)
-            assert 'Sync done' in caplog.text
-            if failure == 'flood':
-                assert 'rate limited' in caplog.text
-            else:
-                assert 'Sync indexing history' in caplog.text
-        assert 'Sync requested' in caplog.text
-        assert 'Sync started' in caplog.text
-    finally:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-        store.db.close()
-
-
-@pytest.mark.asyncio
-async def test_sync_scans_each_channel_once_and_resumes_history(tmp_path):
-    import asyncio
-
-    store = Store(tmp_path / 'db')
-    gateway = Telegram(Settings(8000, 'http://localhost', 'a'*32, 1, 'hash', '', tmp_path), store)
-    store.save_checkpoint(dict(channel=1, newest=10, oldest=1, complete=1))
-    store.save_checkpoint(dict(channel=2, newest=305, oldest=206, complete=0))
-    catch_ups, history_offsets, indexed, reconciliations = [], [], [], []
-
-    class Client:
-        async def get_messages(self, entity, limit, offset_id=0, min_id=0, max_id=0, reverse=False):
-            if reverse:
-                assert entity == 2 and min_id == 305 and max_id == 307
-                return [SimpleNamespace(id=306)]
-            if limit == 1:
-                catch_ups.append((entity, store.checkpoint(entity)['newest']))
-                return [SimpleNamespace(id=10 if entity == 1 else 306)]
-            assert entity == 2, 'Completed channels must not be scanned again'
-            history_offsets.append(offset_id)
-            return [SimpleNamespace(id=i) for i in range(offset_id - 1, 0, -1)][:limit]
-
-    async def discover():
-        gateway.channels = {1: 1, 2: 2}
-
-    async def reconcile():
-        reconciliations.append(True)
-
-    gateway.client = Client()
-    gateway.discover, gateway.reconcile = discover, reconcile
-    gateway.index = lambda channel, message: indexed.append((channel, message.id))
-    gateway.request_sync()
-    task = asyncio.create_task(gateway.run())
-
-    async def finished():
-        while gateway.sync_status['state'] in ('queued', 'running'):
-            await asyncio.sleep(.01)
-        assert gateway.sync_status['state'] == 'done'
-
-    try:
-        await asyncio.wait_for(finished(), 8)
-        assert catch_ups == [(1, 10), (2, 305)]
-        assert history_offsets == [206, 107, 8]
-        assert indexed == [(2, 306)] + [(2, i) for i in range(205, 0, -1)]
-        assert store.checkpoint(2) == dict(channel=2, newest=306, oldest=1, complete=1)
-        assert reconciliations == []
-
-        # A new sync session must check both channels for new messages again.
-        gateway.request_sync()
-        await asyncio.wait_for(finished(), 2)
-        assert catch_ups == [(1, 10), (2, 305), (1, 10), (2, 306)]
-        assert history_offsets == [206, 107, 8]
-    finally:
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-        store.db.close()
-
-
-@pytest.mark.asyncio
-async def test_sync_requested_during_background_scan_cancels_before_discovery(tmp_path):
-    import asyncio
-    store = Store(tmp_path / 'db')
-    gateway = Telegram(Settings(8000, 'http://localhost', 'a'*32, 1, 'hash', '', tmp_path), store)
-    scanning, cancelled, rediscovering = asyncio.Event(), asyncio.Event(), asyncio.Event()
-    discoveries = []
-
-    async def discover():
-        discoveries.append(True)
-        gateway.channels = {-100123: 'channel'}
-        if len(discoveries) == 2:
-            rediscovering.set()
-            await asyncio.Event().wait()
-
-    async def scan(channel, entity):
-        scanning.set()
-        try:
-            await asyncio.Event().wait()
-        finally:
-            cancelled.set()
-        checkpoint = store.checkpoint(channel)
-        checkpoint['complete'] = 1
-        store.save_checkpoint(checkpoint)
-
-    async def reconcile():
-        pass
-
-    gateway.discover, gateway.scan, gateway.reconcile = discover, scan, reconcile
-    task = asyncio.create_task(gateway.run())
-    try:
-        await asyncio.wait_for(scanning.wait(), 1)
-        gateway.request_sync()
-        await asyncio.wait_for(rediscovering.wait(), 1)
-        assert cancelled.is_set()
-        assert not store.checkpoint(-100123)["complete"]
-        assert gateway.sync_status['state'] == 'running'
-    finally:
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-        assert gateway.sync_status['state'] == 'failed'
-        store.db.close()
-
-
 @pytest.mark.parametrize('display_collection', [False, True])
 def test_collection_visibility_preserves_search(tmp_path, display_collection):
     cfg = Settings(8000, 'https://example.com', 'a' * 32, 1, 'hash', 'session', tmp_path,
@@ -913,7 +703,6 @@ def test_dev_ui_auth_mode_is_rendered_by_server(tmp_path, skip_auth):
         assert cfg.key not in html
         assert cfg.session not in html
         assert cfg.api_hash not in html
-
 
 
 @pytest.mark.asyncio
@@ -996,6 +785,3 @@ def test_dev_ui_password_environment(monkeypatch, password):
     if password is not None:
         monkeypatch.setenv('DEV_UI_PASSWORD', password)
     assert core.Settings.env().dev_ui_password == (password or '')
-
-
-

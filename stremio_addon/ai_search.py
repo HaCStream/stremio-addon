@@ -1,4 +1,4 @@
-"""Online Gemini discovery matched against the ordinary Telegram index."""
+"""Online Gemini titles matched against on-demand Telegram discoveries."""
 import asyncio
 from contextvars import ContextVar
 from copy import deepcopy
@@ -37,6 +37,7 @@ class AISearch:
         self.http = http or httpx.AsyncClient(timeout=30)
         self.owns_http = http is None
         self.cache = {}
+        self.lookup = None
         self.search_lock = asyncio.Lock()
         self.request_lock = asyncio.Lock()
         self.last_request = 0
@@ -168,6 +169,8 @@ class AISearch:
         if not query.strip():
             return []
         titles = await self.titles(query)
+        if self.lookup:
+            allowed = await self.lookup(titles['movies' if kind == 'movie' else 'series'], kind)
         rows = {}
         for title in titles['movies' if kind == 'movie' else 'series']:
             # FTS retrieves candidates; normalized title equality prevents a

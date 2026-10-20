@@ -98,7 +98,7 @@ async function load(){loads++;if(failure)throw Object.assign(Error('Request fail
     subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)
 
 
-def test_channel_queue_renders_zero_and_unknown():
+def test_channel_cache_counts_have_no_scan_queue():
     node = shutil.which('node')
     if not node:
         pytest.skip('Node is required to execute the Developer UI JavaScript')
@@ -112,11 +112,12 @@ const esc=v=>String(v??'');
 const phaseLabel=v=>v;
 """ + render + r"""
 renderChannels([{id:1,name:'Group',videos:42,queue:0,complete:true,phase:'ready'}]);
-assert.match(output.innerHTML,/<td>42<\/td><td>0<\/td>/);
+assert.match(output.innerHTML,/<td>42<\/td>/);
+assert.ok(!output.innerHTML.includes('Up to date'));
 renderChannels([{id:1,name:'Group',videos:42,queue:null,phase:'checking'}]);
-assert.match(output.innerHTML,/<td>Checking…<\/td>/);
+assert.ok(!output.innerHTML.includes('Checking…'));
 renderChannels([]);
-assert.match(output.innerHTML,/colspan="5"/);
+assert.match(output.innerHTML,/colspan="3"/);
 """
     subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)
     assert '<th>Newest</th>' not in html
@@ -162,7 +163,7 @@ const handler=HANDLER
 
 
 
-def test_sync_can_restart_and_old_poller_does_not_overwrite_new_status():
+def test_chat_refresh_poller_ignores_older_requests():
     node = shutil.which('node')
     if not node:
         pytest.skip('Node is required to execute the Developer UI JavaScript')
@@ -174,7 +175,7 @@ let syncAttempt=0,posts=0;
 const button={disabled:false},status={},timers=[];
 const document={querySelector:s=>s==='#sync'?button:status};
 const setTimeout=callback=>timers.push(callback);
-let api=async(path,options)=>({sync:options?{id:String(++posts),state:'queued'}:{id:String(posts),state:'done'}});
+let api=async(path,options)=>({refresh:options?{id:String(++posts),state:'queued'}:{id:String(posts),state:'done'}});
 const load=async()=>{};
 const handler=HANDLER
 (async()=>{
@@ -183,9 +184,9 @@ const handler=HANDLER
  const second=handler();await Promise.resolve();
  assert.equal(posts,2);assert.equal(button.disabled,false);
  timers.shift()();await first;
- assert.equal(status.textContent,'Syncing...');assert.equal(status.className,'muted');
+ assert.equal(status.textContent,'Refreshing chats...');assert.equal(status.className,'muted');
  timers.shift()();await second;
- assert.equal(status.textContent,'Sync done!');assert.equal(status.className,'ok');
+ assert.equal(status.textContent,'Chats refreshed!');assert.equal(status.className,'ok');
  assert.equal(button.disabled,false);
 })().catch(error=>{console.error(error);process.exitCode=1});
 """.replace('HANDLER', handler)

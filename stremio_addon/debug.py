@@ -101,15 +101,11 @@ def create_debug_app(runtime):
             'SELECT channel, count(*) AS count FROM videos GROUP BY channel')})
         result = []
         for channel, entity in shared.tg.channels.items():
-            point = shared.store.checkpoint(channel)
             result.append({
                 'id': channel,
                 'name': channel_title(entity, channel),
                 'videos': counts.get(channel, 0),
-                'queue': shared.tg.queue(channel),
-                'complete': bool(point['complete']),
-                'phase': ('indexing' if channel in getattr(shared.tg, 'pending_channels', set())
-                          else 'ready' if point['complete'] else 'checking'),
+                'phase': 'cached',
             })
         return sorted(result, key=lambda item: item['name'].casefold())
 
@@ -146,8 +142,7 @@ def create_debug_app(runtime):
             'connected': shared.tg.client.is_connected(),
             'phase': shared.tg.status.get('phase'),
             'last_error': shared.tg.status.get('last_error'),
-            'pending_channels': shared.tg.status.get('pending_channels', 0),
-            'scan_interval_seconds': shared.cfg.scan_interval_seconds,
+            'search_mode': 'on_demand',
             'uptime_seconds': int(time.time() - shared.started_at),
             'videos': await shared.store.run(lambda: shared.store.db.execute('SELECT count(*) FROM videos').fetchone()[0]),
             'channels': len(shared.tg.channels),
@@ -220,21 +215,21 @@ def create_debug_app(runtime):
         authorize(x_debug_key)
         return {'events': list(app.state.runtime.events)}
 
-    @app.post('/api/sync', status_code=202)
-    async def sync(x_debug_key: str | None = Header(None)):
+    @app.post('/api/chats/refresh', status_code=202)
+    async def refresh_chats(x_debug_key: str | None = Header(None)):
         authorize(x_debug_key)
         shared = app.state.runtime
         try:
-            state = shared.tg.request_sync()
+            state = shared.tg.request_refresh()
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from None
-        shared.record({'event': 'sync_requested', 'status': 202})
-        return {'accepted': True, 'sync': state}
+        shared.record({'event': 'chat_refresh_requested', 'status': 202})
+        return {'accepted': True, 'refresh': state}
 
-    @app.get('/api/sync')
-    async def sync_status(x_debug_key: str | None = Header(None)):
+    @app.get('/api/chats/refresh')
+    async def refresh_status(x_debug_key: str | None = Header(None)):
         authorize(x_debug_key)
-        return {'sync': dict(app.state.runtime.tg.sync_status)}
+        return {'refresh': dict(app.state.runtime.tg.refresh_status)}
 
     @app.get('/api/search')
     async def search(
@@ -278,7 +273,7 @@ def create_debug_app(runtime):
             matched = [(row, 'AI online title match') for rows in grouped.values() for row in rows]
         elif mode == 'text':
             rows, live = await shared.search.catalog(q, skip) if q.strip() else ([], set())
-            matched = [(row, 'Telegram live search (60s cache)' if row['id'] in live else 'full-text index') for row in rows]
+            matched = [(row, 'Telegram live search (60s cache)' if row['id'] in live else 'local video cache') for row in rows]
         else:
             rows, live = await shared.search.match(kind, q.strip())
             allowed = set(shared.tg.channels)

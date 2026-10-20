@@ -19,21 +19,15 @@ configuration:
     description: Secret application hash paired with the Telegram API ID.
   USER_SESSION_STRING:
     name: Telegram session string
-    description: Complete Telethon StringSession for the Telegram account to index.
-  SCAN_INTERVAL_SECONDS:
-    name: Scan interval (seconds)
-    description: >-
-      Delay between completed Telegram scan cycles. Default 300 seconds.
-      Confirmed history backlogs continue promptly; Sync now bypasses this delay.
-      Restart the add-on after changing this option.
+    description: Complete Telethon StringSession for the Telegram account to search.
   CACHE_MB:
     name: Cache limit (MiB)
     description: Maximum disk space for cached video chunks in MiB; zero disables the cache.
   CHANNEL_IDS:
     name: Chat IDs
     description: >-
-      Optional comma-separated Telegram chat IDs restricting indexing and live search. Leave blank
-      to scan all accessible account chats.
+      Optional comma-separated Telegram chat IDs restricting search. Leave blank
+      to search all accessible account chats.
   DISPLAY_COLLECTION:
     name: Display collection
     description: >-
@@ -71,11 +65,11 @@ configuration:
           to allow AI searches without the suffix.
   developer_ui:
     name: Developer UI
-    description: Configure the dashboard for inspecting indexing and search activity.
+    description: Configure the dashboard for inspecting cached videos and search activity.
     fields:
       DEV_UI_ENABLED:
         name: Enable Developer UI
-        description: Allow access to the dashboard and its search and sync tools.
+        description: Allow access to the dashboard and its search and chat refresh tools.
       DEV_UI_PASSWORD:
         name: Developer UI password
         description: Optional custom login password. Leave blank to use the addon access key. Ignored when authentication is skipped.
@@ -83,7 +77,7 @@ configuration:
         name: Skip Developer UI authentication
         description: >-
           Open the Developer UI without entering a password. Anyone who can reach
-          the dashboard can view its data, search the index, and request a sync.
+          the dashboard can view its data, search Telegram, and refresh chats.
 network:
   8000/tcp: Stremio addon endpoint.
   8001/tcp: Developer UI endpoint.

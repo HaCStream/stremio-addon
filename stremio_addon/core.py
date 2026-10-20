@@ -155,7 +155,6 @@ class Settings:
     display_collection: bool = False
     debug_level: str = "INFO"
     dev_ui_password: str = ''
-    scan_interval_seconds: int = 300
 
     @classmethod
     def env(cls):
@@ -229,19 +228,12 @@ class Settings:
         debug_level = get('DEBUG_LEVEL', 'INFO').upper()
         if debug_level not in ('NOTSET', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'):
             raise ValueError('DEBUG_LEVEL must be NOTSET, DEBUG, INFO, WARNING, ERROR or CRITICAL')
-        try:
-            scan_interval = int(get('SCAN_INTERVAL_SECONDS', '300'))
-            if scan_interval < 1:
-                raise ValueError()
-        except ValueError as exc:
-            raise ValueError('SCAN_INTERVAL_SECONDS must be a positive integer') from exc
         return cls(port, url, key, int(get('TELEGRAM_APP_API_ID')), get('TELEGRAM_APP_API_HASH'), get('USER_SESSION_STRING'),
                    Path(get('DATA_DIR', default_data)), int(get('CACHE_MB', '512')) * 1024**2,
                    channel_ids, debug_port, debug_host, debug_enabled, ai_enabled, gemini_key,
                    skip_debug_auth, ai_suffix,
                    str(os.getenv('TMDB_API_KEY') or options.get('TMDB_API_KEY') or '').strip(),
                    display_collection=boolean('DISPLAY_COLLECTION'), debug_level=debug_level,
-                   scan_interval_seconds=scan_interval,
                    dev_ui_password=str(os.getenv('DEV_UI_PASSWORD') or options.get('DEV_UI_PASSWORD') or '').strip())
 
 
@@ -299,7 +291,6 @@ class Store:
           year INTEGER, season INTEGER, episode INTEGER, imdb TEXT, quality TEXT, file_id TEXT, search TEXT);
         CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(id UNINDEXED, text, tokenize='unicode61');
         CREATE TABLE IF NOT EXISTS checkpoints(channel INTEGER PRIMARY KEY, oldest INTEGER, newest INTEGER, complete INTEGER DEFAULT 0);
-        CREATE TABLE IF NOT EXISTS scan_times(channel INTEGER PRIMARY KEY, checked_at REAL NOT NULL);
         CREATE TABLE IF NOT EXISTS mappings(id TEXT PRIMARY KEY, imdb TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS tmdb_series(series_id TEXT PRIMARY KEY,
           tmdb INTEGER, imdb TEXT, name TEXT, status TEXT NOT NULL,
@@ -457,7 +448,6 @@ class Store:
         def checkpoint(channel):
             with self.db:
                 self.db.execute('DELETE FROM checkpoints WHERE channel=?', (channel,))
-                self.db.execute('DELETE FROM scan_times WHERE channel=?', (channel,))
 
         for channel in params:
             while True:
@@ -551,20 +541,3 @@ class Store:
     def save_checkpoint(self, p):
         with self.transaction():
             self.db.execute('INSERT OR REPLACE INTO checkpoints VALUES (:channel,:oldest,:newest,:complete)', p)
-
-
-    def save_scan_time(self, channel, checked_at):
-        with self.transaction():
-            self.db.execute('INSERT OR REPLACE INTO scan_times VALUES (?,?)', (channel, checked_at))
-
-    def search_cutoff(self, channels):
-        if not channels:
-            return None
-        rows = self.db.execute(
-            'SELECT p.complete,t.checked_at FROM checkpoints p '
-            'LEFT JOIN scan_times t ON t.channel=p.channel WHERE p.channel IN ('
-            + ','.join('?' for _ in channels) + ')', tuple(channels)).fetchall()
-        if len(rows) != len(channels) or any(not r['complete'] or r['checked_at'] is None for r in rows):
-            return None
-        # Overlap the oldest verified snapshot to cover timestamp boundaries.
-        return max(0, int(min(r['checked_at'] for r in rows)) - 120)

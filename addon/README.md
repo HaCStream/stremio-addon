@@ -1,6 +1,6 @@
 # 📺 Stremio Telegram
 
-Watch videos from your Telegram account in **Stremio or Nuvio**, using your Home Assistant server. The add-on indexes channels, groups, private chats, bots and Saved Messages, groups series by episode, and streams files without transcoding.
+Watch videos from your Telegram account in **Stremio or Nuvio**, using your Home Assistant server. The add-on searches channels, groups, private chats, bots and Saved Messages on demand, saves discovered videos locally, groups episodes and streams without transcoding. There is no full-history indexing.
 
 ## 🚀 Get started
 
@@ -19,48 +19,27 @@ Watch videos from your Telegram account in **Stremio or Nuvio**, using your Home
 
 | Option | What it does |
 | --- | --- |
-| `CHANNEL_IDS` | Restricts indexing and live search to comma-separated chat IDs. Leave empty for all accessible account chats. |
+| `CHANNEL_IDS` | Restricts search to comma-separated chat IDs. Leave empty for all accessible account chats. |
 | `CACHE_MB` | Sets the video chunk cache limit in MiB (default: `512`). |
 | **TMDB show matching** → `TMDB_API_KEY` | Matches Telegram series to public catalog episodes; review uncertain matches in the Developer UI. |
 | **AI search** → `AI_SEARCH_ENABLED`, `GEMINI_API_KEY` | Adds AI movie and series search. By default, end the search with `AI` to send it to Gemini. |
-| **Developer UI** → `DEV_UI_ENABLED` | Enables the dashboard for chat status, manual sync, search, and TMDB matching. Open it through the add-on's **Open Web UI** button. |
+| **Developer UI** → `DEV_UI_ENABLED` | Enables the dashboard for chat status, chat refresh, search, and TMDB matching. Open it through the add-on's **Open Web UI** button. |
 
 🔄 After enabling new catalogs or TMDB matching, refresh or reinstall the add-on in Stremio/Nuvio. Restart the Home Assistant add-on after changing its options.
 
 For all settings and reverse proxy details, see the [configuration guide](DOCS.md).
 
 
-## 🔎 Search before indexing finishes
+## 🔎 Search on demand
 
-Search combines your index with Telegram on demand. After all selected chats are fully indexed, searches with local matches check Telegram only for recent messages since the oldest verified scan, with a **two-minute overlap**. Incomplete indexes or missing local matches still search full history. Saved scan times survive restarts; existing installations use full-history searches until their chats have been checked. Results are merged without duplicating files; live hits do not mark a chat fully indexed. Identical Telegram queries are cached for **60 seconds**, so new uploads can take up to that long to appear. Live searches share indexing's request limiter and yield to playback. After a **12-second live-search budget** or upstream failure, available local/partial results are returned.
+Searches query Telegram across history and save discovered videos. Identical queries are cached for **60 seconds**; simultaneous duplicates share one request. Opening a series fetches more relevant episodes on demand. Collections and episode lists contain discovered items and may be incomplete. Existing cached videos and manual mappings survive upgrades.
 
-Movie matching accepts strong titles without a year, ranks exact title/year matches first and avoids conflicting release years. Episode-only videos can inherit their series name from the group/channel title; manual mappings stay authoritative.
+Telegram searches have a **12-second phase budget** and return available cached/partial results on a timeout or failure. Movie matching accepts strong missing-year titles; episode-only videos can use a group/channel name as their series title. Saved mappings remain authoritative.
 
-The **Chats** tab lists source IDs: positive IDs for private/bot/Saved Messages conversations, negative IDs for regular groups and `-100…` IDs for channels/supergroups. `CHANNEL_IDS` restricts both indexing and live search. Only video attachments are indexed; tag replies are not interpreted.
+The **Chats** tab shows cached video counts, not indexing progress. **Refresh chats** reloads chat identities without scanning history. Private/bot/Saved Messages IDs are positive; regular groups are negative; channels/supergroups use `-100…` IDs. `CHANNEL_IDS` restricts searches. Tag replies are not interpreted.
 
-## ⚡ Indexing speed and playback priority
+## ⚡ Playback priority
 
-Chats are scanned **one at a time**, with fully indexed chats
-refreshed before unfinished history scans. Background Telegram requests are
-spaced by at least **1 second** after each response, including requests made
-inside pagination and channel discovery. A flood wait pauses background
-requests for Telegram's requested delay plus **1 second**, then doubles the
-request spacing up to **5 seconds**. After every **20 successful requests**, the
-spacing decreases by **0.25 seconds**, down to the 1-second baseline. These are
-local pacing choices, not guaranteed Telegram limits; flood waits can still occur.
-Sync now keeps the cooldown and pacing; restarting the add-on resets adaptive
-spacing. Old `INDEXING_CONCURRENCY` values are ignored and can be removed.
+Search/discovery requests are paced at least one second apart. Flood waits increase spacing up to five seconds, with gradual recovery. Searches and requested-show metadata matching yield to playback; the player bypasses the search limiter. Already-running requests may finish.
 
-History pages fetch up to 100 messages: 99 to index and one look-ahead message
-that confirms whether unscanned history remains, avoiding a second request just
-for look-ahead.
-
-Indexing saves each page and its checkpoint in one database transaction.
-Background scans, live searches, reconciliation, live-message indexing and automatic TMDB
-matching pause during playback and resume after a **2-second grace period**
-between player requests. Already-running requests or database batches may finish.
-Playback startup and video downloads do not wait for the background scan limiter.
-Continuous playback can delay indexing and leave new videos unavailable until playback stops.
-
-
-🔄 **Sync now** restarts any running indexing cycle, keeping saved progress. Fully indexed channels and groups are refreshed first, then unfinished history scans resume. You can click it again while syncing to restart. Streaming keeps priority over indexing.
+`SCAN_INTERVAL_SECONDS` and `INDEXING_CONCURRENCY` are obsolete and ignored. No periodic history scans run. Missed edits/deletions may remain cached until rediscovery or playback validation.

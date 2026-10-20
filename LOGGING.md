@@ -4,7 +4,7 @@
 `NOTSET`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` (case insensitive in environment variables).
 NOTSET removes the root logging threshold and enables detailed library diagnostics.
 Home Assistant displays these six choices in a dropdown.
-Restart after changing it. INFO keeps lifecycle, sync summaries and interactions;
+Restart after changing it. INFO keeps lifecycle, chat refresh summaries and interactions;
 DEBUG adds history batches, individual TMDB matches and HTTP transport detail.
 Library warnings and errors remain visible at INFO. Server failures use ERROR,
 client failures use WARNING. Raising the threshold intentionally hides lower levels.
@@ -26,7 +26,7 @@ is prefixed with the date, time, and UTC offset in the runtime's local timezone.
 For example: `2026-10-08T12:28:25+0300 INFO: addon.app: ...`.
 Containers using UTC display `+0000`.
 
-Telegram discovery and sync messages use `stremio_addon.telegram`; request
+Telegram discovery and search messages use `stremio_addon.telegram`; request
 summaries use `stremio_addon.interactions`. Uvicorn lifecycle and error messages
 display as `uvicorn.server`, with their severity shown separately as INFO,
 WARNING, or ERROR. When the Developer UI is enabled, both HTTP listeners
@@ -36,7 +36,7 @@ Each catalog search/browse, metadata lookup, and source lookup emits one JSON
 summary with its event, query or item ID, HTTP status and duration in milliseconds.
 Successful lookups include the returned result count, distinct channel count,
 and up to three result titles. Counts refer to the current response/page, not
-the total number of indexed videos. Source summaries identify direct Telegram
+the total number of cached videos. Source summaries identify direct Telegram
 ID lookups versus metadata matching.
 
 Example:
