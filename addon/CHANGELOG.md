@@ -1,5 +1,15 @@
 # Changelog
 
+<!-- release:1.6.11:start -->
+## 1.6.11
+
+## What's Changed
+* Keep catalog indexing and search Telegram on demand by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/59
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.6.10...v1.6.11
+<!-- release:1.6.11:end -->
+
 <!-- release:1.6.10:start -->
 ## 1.6.10
 

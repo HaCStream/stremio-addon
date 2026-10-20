@@ -1,5 +1,5 @@
 name: Stremio Telegram
-version: "1.6.10"
+version: "1.6.11"
 slug: stremio_telegram
 description: A self-hosted addon that connects to your Telegram user account, builds catalogs from account chats and searches Telegram on demand for video playback
 
