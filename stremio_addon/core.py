@@ -83,7 +83,36 @@ def title_aliases(row):
     return aliases
 
 
-def parse_title(filename, caption):
+def source_name(entity, fallback=''):
+    if isinstance(entity, str):
+        return entity
+    if getattr(entity, 'is_self', False):
+        return 'Saved Messages'
+    return (getattr(entity, 'title', None)
+            or ' '.join(x for x in (getattr(entity, 'first_name', None),
+                                    getattr(entity, 'last_name', None)) if x)
+            or str(fallback))
+
+
+def movie_title_score(row, aliases, year):
+    """Accept strong missing-year/subtitle matches without confusing known remakes."""
+    names = {normalize(t) for t in title_aliases(row) if t}
+    score = 0
+    for alias in aliases:
+        full = normalize(alias)
+        if full and full in names:
+            score = max(score, 100)
+        # A subtitle may be absent in releases, but a single common word is too weak.
+        base = normalize(re.split(r':|\s+[-–—]\s+', alias, maxsplit=1)[0])
+        for name in names:
+            if len(base.split()) >= 2 and (name == base or name.startswith(full + ' ')):
+                score = max(score, 85)
+    if year is not None and row.get('year') is not None:
+        score += 20 if row['year'] == year else -60
+    return score
+
+
+def parse_title(filename, caption, source_title=''):
     raw = re.sub(r'\.(mp4|mkv|avi|mov|webm|m4v|ts)$', '', filename, flags=re.I) or next(iter(caption.splitlines()), 'Telegram video')
     # Underscores are regex word characters. Normalize filename separators
     # before matching so S5E21_480P and S5E21.480P parse identically.
@@ -94,7 +123,11 @@ def parse_title(filename, caption):
     year = re.search(r'\b(19\d{2}|20\d{2})\b', combined)
     imdb = re.search(r'\btt\d{7,10}\b', combined)
     quality = re.search(r'\b(2160p|1080p|720p|480p|4k)\b', combined, re.I)
-    title = caption_title(caption) or title_from_text(raw) or raw
+    title = caption_title(caption) or title_from_text(raw)
+    # Episode-only messages inherit the group/channel name, never a private contact name.
+    if not title and ep and source_title:
+        title = title_from_text(source_title)
+    title = title or raw
     return dict(title=title, year=int(year[0]) if year else None,
                 season=numbers[0] if ep else None, episode=numbers[1] if ep else None,
                 imdb=imdb[0] if imdb else None, quality=quality[0] if quality else '')
@@ -169,11 +202,11 @@ class Settings:
             raw_ids = options.get('CHANNEL_IDS', options.get('channel_ids', ''))
         channel_ids = None
         if not isinstance(raw_ids, str):
-            raise ValueError('CHANNEL_IDS must be a comma-separated string of negative channel IDs')
+            raise ValueError('CHANNEL_IDS must be a comma-separated string of Telegram chat IDs')
         if raw_ids.strip():
             parts = [part.strip() for part in raw_ids.split(',')]
-            if any(not re.fullmatch(r'-[1-9][0-9]*', part) for part in parts):
-                raise ValueError('CHANNEL_IDS must contain only comma-separated negative channel IDs')
+            if any(not re.fullmatch(r'-?[1-9][0-9]*', part) for part in parts):
+                raise ValueError('CHANNEL_IDS must contain only comma-separated nonzero Telegram chat IDs')
             channel_ids = frozenset(int(part) for part in parts)
         port = 8000
         debug_port = 8001
@@ -281,6 +314,7 @@ class Store:
             with self.db:
                 self.db.execute('ALTER TABLE videos ADD COLUMN series_id TEXT')
         self.db.execute('CREATE INDEX IF NOT EXISTS videos_channel ON videos(channel)')
+        self.db.execute('CREATE INDEX IF NOT EXISTS videos_message ON videos(message,channel)')
         self.db.execute('CREATE INDEX IF NOT EXISTS videos_series ON videos(series_id,season,episode)')
         self.db.commit()
         rebuilt_search = self.db.execute('PRAGMA user_version').fetchone()[0] < 3
@@ -309,6 +343,26 @@ class Store:
                 self.db.execute('CREATE TABLE IF NOT EXISTS search_rows(id TEXT PRIMARY KEY, fts_rowid INTEGER NOT NULL UNIQUE)')
                 self.db.execute('DELETE FROM search_rows')
                 self.db.execute('INSERT INTO search_rows SELECT id,rowid FROM search')
+
+        if self.db.execute('PRAGMA user_version').fetchone()[0] < 4:
+            with self.transaction():
+                for saved in self.db.execute(
+                        "SELECT * FROM videos WHERE season IS NOT NULL AND "
+                        "(title GLOB '[sS][0-9]*' OR title LIKE 'עונה%' OR title='Telegram video')"):
+                    row = dict(saved)
+                    # Previously saved identities remain authoritative.
+                    if self.db.execute("SELECT 1 FROM tmdb_series WHERE series_id=? AND status IN ('auto','manual','blocked')",
+                                       (row['series_id'],)).fetchone():
+                        continue
+                    if row['channel'] < 0:
+                        parsed = parse_title(row['filename'] or '', row['caption'] or '',
+                                             row['channel_name'] or '')
+                        if parsed['title'] != row['title']:
+                            row.update(parsed)
+                            row.pop('search', None)
+                            row.pop('series_id', None)
+                            self.upsert(row)
+                self.db.execute('PRAGMA user_version=4')
 
     @property
     def db(self):
@@ -467,6 +521,23 @@ class Store:
             'ORDER BY v.date DESC,v.id', (expression, *sorted(allowed)))
         return [dict(row) for row in rows
                 if normalize(title) in {normalize(alias) for alias in title_aliases(dict(row))}]
+
+    def movie_candidates(self, aliases, allowed):
+        if not allowed:
+            return []
+        found = {}
+        for alias in aliases:
+            base = re.split(r':|\s+[-–—]\s+', alias, maxsplit=1)[0]
+            expression = search_expression(base)
+            if not expression:
+                continue
+            rows = self.db.execute(
+                'SELECT v.* FROM videos v JOIN search s ON s.id=v.id '
+                'WHERE s.text MATCH ? AND v.series_id IS NULL AND v.channel IN ('
+                + ','.join('?' for _ in allowed) + ') ORDER BY v.date DESC LIMIT 500',
+                (expression, *sorted(allowed)))
+            found.update((r['id'], dict(r)) for r in rows)
+        return list(found.values())
 
     def explicit(self, imdb):
         return [dict(r) for r in self.db.execute('SELECT v.*, COALESCE(m.imdb,v.imdb) AS mapped FROM videos v LEFT JOIN mappings m ON m.id=v.id WHERE COALESCE(m.imdb,v.imdb)=?', (imdb,))]

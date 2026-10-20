@@ -8,6 +8,7 @@ from .metadata import Metadata
 from .telegram import Telegram
 from .ai_search import AISearch
 from .tmdb import TMDB
+from .search import HybridSearch
 
 
 class Runtime:
@@ -31,6 +32,7 @@ class Runtime:
                 self.metadata = Metadata()
                 self.tmdb = TMDB(self.cfg, self.store, self.tg)
                 self.metadata.tmdb = self.tmdb
+                self.search = HybridSearch(self.store, self.tg, self.metadata)
                 self.tmdb_task = None
                 self.tokens = Tokens(self.cfg.key)
                 self.ai = AISearch(self.cfg, self.store) if self.cfg.ai_search_enabled else None

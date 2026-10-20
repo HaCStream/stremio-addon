@@ -30,10 +30,10 @@ configuration:
     name: Cache limit (MiB)
     description: Maximum disk space for cached video chunks in MiB; zero disables the cache.
   CHANNEL_IDS:
-    name: Channel and group IDs
+    name: Chat IDs
     description: >-
-      Optional comma-separated negative Telegram channel or group IDs. Leave blank to scan all
-      joined public and private channels and groups.
+      Optional comma-separated Telegram chat IDs restricting indexing and live search. Leave blank
+      to scan all accessible account chats.
   DISPLAY_COLLECTION:
     name: Display collection
     description: >-

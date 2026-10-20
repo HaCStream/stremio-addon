@@ -13,7 +13,7 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from .ai_search import ai_query, GeminiCooldown, gemini_diagnostics
-from .core import normalize
+from .core import normalize, source_name
 from .version import get_version
 
 
@@ -79,7 +79,7 @@ def create_debug_app(runtime):
         return ''.join(' ' if unicodedata.category(c).startswith('C') else c for c in text)[:200]
 
     def channel_title(entity, channel):
-        return str(getattr(entity, 'title', None) or channel)
+        return source_name(entity, channel)
 
     def redact_diagnostics(value):
         if isinstance(value, dict):
@@ -277,18 +277,22 @@ def create_debug_app(runtime):
                 gemini_diagnostics.reset(token)
             matched = [(row, 'AI online title match') for rows in grouped.values() for row in rows]
         elif mode == 'text':
-            rows = await shared.store.run(shared.store.catalog, q, skip, 100) if q.strip() else []
-            matched = [(row, 'full-text index') for row in rows if row['channel'] in allowed]
+            rows, live = await shared.search.catalog(q, skip) if q.strip() else ([], set())
+            matched = [(row, 'Telegram live search (60s cache)' if row['id'] in live else 'full-text index') for row in rows]
         else:
-            rows = await shared.metadata.match(shared.store, kind, q.strip())
-            aliases, resolved_year = await shared.metadata.resolve(kind, q.split(':', 1)[0].strip())
+            rows, live = await shared.search.match(kind, q.strip())
+            allowed = set(shared.tg.channels)
+            aliases, resolved_year, _, _ = await shared.metadata.search_target(shared.store, kind, q.strip())
             matched = []
             for row in rows:
                 if row['channel'] not in allowed:
                     continue
                 mapping = shared.store.db.execute('SELECT imdb FROM mappings WHERE id=?', (row['id'],)).fetchone()
                 explicit = mapping['imdb'] if mapping else row['imdb']
-                matched.append((row, 'explicit IMDb mapping' if explicit else 'metadata title/year match'))
+                matched.append((row, ('Telegram live search + metadata match' if row['id'] in live else
+                                      'explicit IMDb mapping' if explicit else 'metadata title/year match')))
+        available = await channels()
+        allowed = set(shared.tg.channels)
         items = [result_row(row, reason) for row, reason in matched]
         per_channel = {str(item['id']): 0 for item in available}
         for item in items:

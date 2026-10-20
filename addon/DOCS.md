@@ -50,13 +50,13 @@ Set these options in the add-on's Configuration tab:
 | `USER_SESSION_STRING` | Complete Telethon StringSession |
 | `DISPLAY_COLLECTION` | Show Telegram collections on the main screen (default `false`); search remains available. Restart and refresh/reinstall the addon in your client after changing it |
 | `CACHE_MB` | Optional cache limit in MiB, default `512` |
-| `CHANNEL_IDS` | Optional comma-separated negative channel or group IDs; blank scans all joined public and private channels and groups |
+| `CHANNEL_IDS` | Optional comma-separated chat IDs restricting indexing and live search; blank scans all accessible account chats |
 
 For example, set `CHANNEL_IDS: "-1001234567890,-1009876543210"` and restart
-the add-on. Only those joined public and private channels and groups will be indexed.
+the add-on. Only those chats will be indexed and searched live.
 Existing catalog entries from excluded channels are removed on discovery;
 selecting them again restarts their history scan. Telegram posts are unchanged.
-Regular groups use negative IDs (for example, `-123456789`); supergroups and channels use `-100…` IDs. The `CHANNEL_IDS` option accepts both.
+Regular groups use negative IDs (for example, `-123456789`); supergroups and channels use `-100…` IDs. Private chats, bots and Saved Messages use positive user IDs. The `CHANNEL_IDS` option accepts all of these.
 
 The settings use their exact uppercase names. The application
 reads them directly from Home Assistant's `/data/options.json`; the HA startup
@@ -181,7 +181,7 @@ completed Telegram scan cycle before checking again. Set it in the environment
 or Home Assistant options and restart. Initial scanning and confirmed history
 backlogs continue promptly; **Sync now** bypasses the interval. Cycles never overlap.
 
-In **Channels & groups**, **Videos** is the number of indexed videos and **Queue**
+In **Chats**, **Videos** is the number of indexed videos and **Queue**
 estimates the messages still awaiting scanning using message ID ranges.
 It includes deleted-message gaps (and can overestimate in basic groups with shared
 message IDs), requires no extra Telegram requests, and reaches **0** when caught up.
@@ -198,7 +198,7 @@ are handled on the next cycle. TMDB matching runs independently of these states.
 
 ## ⚡ Indexing speed and playback priority
 
-Channels and groups are scanned **one at a time**, with fully indexed chats
+Chats are scanned **one at a time**, with fully indexed chats
 refreshed before unfinished history scans. Background Telegram requests are
 spaced by at least **1 second** after each response, including requests made
 inside pagination and channel discovery. A flood wait pauses background
@@ -214,8 +214,15 @@ that confirms whether unscanned history remains, avoiding a second request just
 for look-ahead.
 
 Indexing saves each page and its checkpoint in one database transaction.
-Background scans, reconciliation, live-message indexing and automatic TMDB
+Background scans, live searches, reconciliation, live-message indexing and automatic TMDB
 matching pause during playback and resume after a **2-second grace period**
 between player requests. Already-running requests or database batches may finish.
 Playback startup and video downloads do not wait for the background scan limiter.
 Continuous playback can delay indexing and leave new videos unavailable until playback stops.
+
+
+### Hybrid search and account coverage
+
+With `CHANNEL_IDS` blank, indexing covers accessible channels, groups, private chats, bots, Saved Messages and archived dialogs. It examines history for video attachments without processing tag replies. Text searches and movie/episode source lookups also query Telegram, including when the index is complete. Identical successful queries are cached for 60 seconds; concurrent identical requests share one query. Matches are persisted without advancing scan checkpoints and deduplicated by chat/message ID. Live searches use the background request limiter, pause for playback and have a 12-second phase budget; failures return available local/partial results.
+
+Unfiltered searches inspect up to three pages of 100 messages, collecting up to 100 videos per query; filtered searches query selected chats directly. Movie matching accepts strong titles with missing years and conservative subtitle variants, ranks matching years first and rejects known conflicting years. Episode-only messages can use a group/channel title as their series name. Contact names are not series titles. Saved show mappings and offsets remain authoritative. See the main README for details and limits.
