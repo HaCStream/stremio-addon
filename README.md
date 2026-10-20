@@ -6,7 +6,7 @@
 
 **Your Telegram videos, available in Stremio / Nuvio.**
 
-A self-hosted addon that connects to your Telegram user account, discovers joined public and private channels and groups, and indexes uploaded videos for browsing, searching, and streaming through your server.
+A self-hosted addon that connects to your Telegram user account, discovers account chats (channels, groups, private conversations, bots and Saved Messages), and indexes uploaded videos for browsing, searching, and streaming through your server.
 
 Since Stremio and Nuvio use the same underlying addon architecture and manifest format, this addon can work for both apps!
 
@@ -72,7 +72,8 @@ Set these values in `.env` for Docker Compose. In Home Assistant, enter the corr
 | `DEV_UI_PASSWORD` | Optional custom Developer UI login password. Blank uses `ADDON_ACCESS_KEY`. Does not change the Stremio/Nuvio access key. Ignored when `SKIP_DEV_UI_AUTH=true`. | `false` | Empty | `YOUR_CUSTOM_PASSWORD` |
 | `SKIP_DEV_UI_AUTH` | Open the Developer UI without a password; anyone with dashboard access can search and request a sync. | `false` | `false` | `true` |
 | `CACHE_MB` | Disk chunk-cache limit in MiB; `0` disables new cache writes. | `false` | `512` | `1024` |
-| `CHANNEL_IDS` | Comma-separated negative channel or group IDs limiting which joined public and private channels and groups are indexed. Blank selects all eligible channels and groups. | `false` | Empty | `-1001234567890,-1009876543210` |
+| `CATALOG_INDEXING_ENABLED` | Build catalogs and episode lists by indexing Telegram history in the background. | `false` | `true` | `false` |
+| `CHANNEL_IDS` | Comma-separated Telegram chat IDs restricting indexing and live search. Blank selects all accessible account chats. | `false` | Empty | `-1001234567890,-1009876543210` |
 | `DISPLAY_COLLECTION` | Show Telegram Videos and Telegram Series collections on the main screen in Stremio/Nuvio. Search remains available when disabled. Restart and refresh/reinstall the addon in your client after changing it. | `false` | `false` | `true` |
 | `AI_SEARCH_ENABLED` | Adds separate **Telegram AI Movies** and **Telegram AI Series** catalogs using online search. | `false` | `false` | `true` |
 | `GEMINI_API_KEY` | Gemini API credential; required only when AI search is enabled. | Conditional | Empty | `YOUR_GEMINI_API_KEY` |
@@ -96,11 +97,21 @@ The review tab supports season and episode offsets: **Telegram number = catalog 
 
 Only extracted title aliases (or your manually entered search title) are sent to TMDB; full captions, channel identities and media are not sent. This product uses the TMDB API but is not endorsed or certified by TMDB.
 
-### 🎯 Selecting channels and groups
+### 🎯 Selecting chats
 
-Leave `CHANNEL_IDS` empty to discover all joined public and private channels and groups, including regular groups, supergroups, and archived dialogs. To limit indexing, copy the full negative channel or group IDs from the protected status endpoint into `CHANNEL_IDS`, then restart.
+Leave `CHANNEL_IDS` empty to scan accessible account history: joined public/private channels and groups, private conversations, bot chats, Saved Messages and archived dialogs. History is examined for video attachments; non-video text and tag replies are not indexed.
 
-Selecting a channel or group does not join it. Direct messages, left groups, and migrated group placeholders are excluded. Removing a source from the selection removes its indexed entries when discovery runs; selecting it again starts a fresh history scan.
+To restrict both indexing and live searches, copy the chat IDs from the Developer UI's **Chats** tab into `CHANNEL_IDS`, then restart. Private chats, bots and Saved Messages use positive user IDs; regular groups use negative IDs; supergroups/channels use `-100…` IDs. For example: `CHANNEL_IDS=123456789,-1001234567890`.
+
+Selecting a chat does not join it or grant access. Left groups, deleted users and migrated group placeholders are excluded. Removing a source removes its indexed entries when discovery runs; selecting it again starts a fresh history scan.
+
+### 🔎 Hybrid search
+
+Text catalog searches, Developer UI text searches and movie/episode source lookups combine the local index with an on-demand Telegram search, even when indexing reports complete or local results already exist. Successful identical Telegram queries (including empty results) are cached in memory for **60 seconds** and simultaneous identical requests share one search. New uploads may be absent until that cache expires.
+
+Live hits are saved locally and deduplicated by chat/message ID, without advancing history checkpoints. Catalog results retain series grouping. External-catalog lookups try localized, English/original and shortened names, plus padded/unpadded and Hebrew episode variants. Telegram queries use the same request pacing and flood-wait cooldown as indexing and yield to streaming. The live-search phase has a **12-second budget**; on a timeout or Telegram failure, available indexed/partial results remain usable. Unfiltered searches inspect at most three 100-message pages per query, collecting at most 100 videos; filtered searches query selected chats directly. These bounded searches do not guarantee every available version will be returned.
+
+Movie matching ranks exact title/year matches first, accepts strong titles with missing years and conservative subtitle variants, and rejects known conflicting years to avoid mixing remakes. Explicit per-file mappings remain authoritative. For episode-only messages such as `S01E03` or `עונה 1 פרק 3`, the group/channel name supplies the series title when the message and filename have no usable title. Private contact names are never treated as show titles. Existing episode-only entries are repaired from saved data without resetting scan progress; saved show identities are preserved.
 
 Displayed titles prefer the first non-empty line of the Telegram message caption, with episode and release details removed. The filename is used when that line has no usable title (for example, a link or channel handle). Both the caption and filename remain searchable, and filename titles remain available for external metadata and AI title matching. Existing indexed titles are updated automatically on startup from saved captions, without scanning Telegram history again.
 
@@ -110,7 +121,7 @@ Set `AI_SEARCH_ENABLED=true` and provide `GEMINI_API_KEY` to add separate **Tele
 
 By default, `REQUIRE_AI_SUFFIX_FOR_AI_SEARCH=true`: finish your description with a separate `AI` word when you are ready to search, for example `someone relives the same day AI`. The suffix is case insensitive (`AI`, `Ai`, `ai`, and `aI` all work). Queries without it return no AI results and make no Gemini request, preventing clients such as Nuvio from using API quota on unfinished text during pauses in typing. Trailing whitespace is ignored, and the suffix is removed before sending the description to Gemini; the description retains its original case. This applies to both AI catalogs and the Developer UI AI search form. Set `REQUIRE_AI_SUFFIX_FOR_AI_SEARCH=false` to allow AI searches without the suffix; a supplied suffix is still stripped.
 
-Gemini uses Google Search to find up to five movie titles and five series titles matching the description. The addon searches those titles in the ordinary Telegram index and returns only normalized title matches in currently selected channels. The movie and series catalogs share one short-lived cached discovery response. Availability is checked locally on every search; category assignments come from Gemini and do not independently classify Telegram files. Results depend on online discovery and title naming, so aliases or translated filenames may not match.
+Gemini uses Google Search to find up to five movie titles and five series titles matching the description. The addon searches those titles on Telegram and in the ordinary Telegram index and returns only normalized title matches in currently selected channels. The movie and series catalogs share one short-lived cached discovery response. Availability is checked locally on every search; category assignments come from Gemini and do not independently classify Telegram files. Results depend on online discovery and title naming, so aliases or translated filenames may not match.
 
 No embeddings, description enrichment, or background AI indexing are generated. Only your search description is sent to Gemini; indexed titles, captions, Telegram credentials, channel IDs, playback URLs, and video bytes are not sent. Google Search grounding may have its own cost and quota in your Gemini project.
 
@@ -258,7 +269,7 @@ Paste this address into Stremio's addon installation field, replacing the domain
 https://telegram.example.com/YOUR_ADDON_ACCESS_KEY/manifest.json
 ```
 
-Initial indexing runs in the background, so results fill in as the scan progresses.
+Initial indexing runs in the background. Hybrid searches can discover videos before their history has been indexed.
 
 ### 🔄 Update a Compose installation
 
@@ -355,7 +366,7 @@ ssh -L 8001:127.0.0.1:8001 user@YOUR_DOCKER_HOST
 Then open `http://127.0.0.1:8001` locally.
 
 - **🔌 Connection:** inspect Telegram connection and indexing state.
-- **📋 Channels:** see which channels and groups are included in queries.
+- **📋 Chats:** see which conversations are included in indexing and search.
 - **🔎 Search:** inspect matching results and diagnostic details without playback.
 - **👁️ Credentials:** reveal or hide the login password while entering it.
 - **🔄 Sync now:** stop the current indexing cycle and start fresh channel discovery and catch-up indexing. Fully indexed channels and groups are checked for new content before unfinished history scans resume from saved progress. The dashboard shows **Syncing...** until indexing finishes, then **Sync done!**. Click **Sync now** again to restart a running sync. Failures appear in the dashboard, and sync progress is logged.
@@ -382,7 +393,7 @@ completed Telegram scan cycle before checking again. Set it in the environment
 or Home Assistant options and restart. Initial scanning and confirmed history
 backlogs continue promptly; **Sync now** bypasses the interval. Cycles never overlap.
 
-In **Channels & groups**, **Videos** is the number of indexed videos and **Queue**
+In **Chats**, **Videos** is the number of indexed videos and **Queue**
 estimates the messages still awaiting scanning using message ID ranges.
 It includes deleted-message gaps (and can overestimate in basic groups with shared
 message IDs), requires no extra Telegram requests, and reaches **0** when caught up.
@@ -399,7 +410,7 @@ are handled on the next cycle. TMDB matching runs independently of these states.
 
 ## ⚡ Indexing speed and playback priority
 
-Channels and groups are scanned **one at a time**, with fully indexed chats
+Chats are scanned **one at a time**, with fully indexed chats
 refreshed before unfinished history scans. Background Telegram requests are
 spaced by at least **1 second** after each response, including requests made
 inside pagination and channel discovery. A flood wait pauses background
@@ -415,9 +426,34 @@ that confirms whether unscanned history remains, avoiding a second request just
 for look-ahead.
 
 Indexing saves each page and its checkpoint in one database transaction.
-Background scans, reconciliation, live-message indexing and automatic TMDB
+Background scans, live searches, reconciliation, live-message indexing and automatic TMDB
 matching pause during playback and resume after a **2-second grace period**
 between player requests. Already-running requests or database batches may finish.
 Playback startup and video downloads do not wait for the background scan limiter.
 Continuous playback can delay indexing and leave new videos unavailable until playback stops.
 
+
+
+## Catalog indexing and live search
+
+Background indexing builds browsable catalogs and grouped episode lists. Searches
+also query Telegram, even when the local index already has matches or the chat is
+fully indexed. A newly uploaded episode can therefore be found before the next
+indexing cycle. Public-catalog episode playback searches for that specific episode;
+it does not wait for the full series to be indexed.
+
+`CATALOG_INDEXING_ENABLED` defaults to `true`. Keep it enabled for complete local
+catalogs over time. Set it to `false` if you mainly use search or external catalogs
+and want to reduce Telegram requests. Disabling it stops automatic history scans,
+catch-up scans and reconciliation; it keeps existing videos/checkpoints, chat
+discovery, incoming message updates and on-demand search. Sync now refreshes chats
+only in this mode. Re-enable it to resume saved indexing progress after restart.
+`DISPLAY_COLLECTION` controls catalog visibility separately.
+
+A single indexing worker resumes history from persistent checkpoints, then checks
+newer messages on later cycles. Live searches take priority over queued indexing
+requests; an RPC already in progress finishes first. Both share request pacing and
+Telegram cooldowns, and both pause during playback. Search traffic can consequently
+slow indexing. Catalogs and episode lists may be incomplete until indexing catches
+up, and a client that cached an older list may need to refresh it. No full-history
+series search is started when opening a show.

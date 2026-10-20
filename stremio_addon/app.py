@@ -193,7 +193,8 @@ def create_app_with_runtime(runtime):
                     request.state.interaction['ai_status'] = type(exc).__name__
                     rows = []
         else:
-            rows = await app.state.store.run(app.state.store.grouped_catalog, kind, set(app.state.tg.channels), query, skip)
+            rows, live = await app.state.runtime.search.catalog(query, skip, kind)
+            request.state.interaction['live_results'] = len(live)
         results(request, rows)
         return {'metas': [await meta(r, kind) for r in rows]}
 
@@ -232,12 +233,14 @@ def create_app_with_runtime(runtime):
             return {'streams': []}
         episode = re.fullmatch(r'(tg:series:[0-9a-f]{24}):(\d+):(\d+)', item)
         if kind == 'series' and episode:
-            rows = await app.state.store.run(app.state.store.series, episode[1], set(app.state.tg.channels), int(episode[2]), int(episode[3]))
+            rows, live = await app.state.runtime.search.match(kind, item)
+            request.state.interaction['live_results'] = len(live)
         elif item.startswith('tg:'):
             row = await app.state.store.run(app.state.store.get, item)
             rows = [row] if row else []
         else:
-            rows = await app.state.metadata.match(app.state.store, kind, item)
+            rows, live = await app.state.runtime.search.match(kind, item)
+            request.state.interaction['live_results'] = len(live)
         rows = [r for r in rows if r['channel'] in app.state.tg.channels]
         results(request, rows)
         return {'streams': [{**stream_labels(r), 'url': url(r, 'play'), 'behaviorHints': {'notWebReady': True}} for r in rows]}

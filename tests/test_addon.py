@@ -79,6 +79,7 @@ def test_tokens():
     (None, None), ('', None), ('  ', None),
     ('-100123,-100456', frozenset({-100123, -100456})),
     (' -100123, -100123 ', frozenset({-100123})),
+    ('123,-100123', frozenset({123, -100123})),
 ])
 def test_channel_ids_settings(monkeypatch, value, expected):
     import stremio_addon.core as core
@@ -93,7 +94,7 @@ def test_channel_ids_settings(monkeypatch, value, expected):
     assert Settings.env().channel_ids == expected
 
 
-@pytest.mark.parametrize('value', ['123', '-0', '-123,', ',-123', '-123,, -456', 'channel'])
+@pytest.mark.parametrize('value', ['0', '-0', '-123,', ',-123', '-123,, -456', 'channel'])
 def test_channel_ids_reject_invalid(monkeypatch, value):
     with pytest.raises(ValueError, match='CHANNEL_IDS'):
         test_channel_ids_settings(monkeypatch, value, None)
@@ -173,7 +174,7 @@ async def test_discover_channels_groups_and_membership(tmp_path):
                      channel(905, megagroup=True, left=True),
                      group(906, left=True), group(907, deactivated=True),
                      group(908, migrated_to=types.InputChannel(901, 1)),
-                     types.User(id=909),
+                     types.User(id=909, deleted=True),
                      types.ChatForbidden(id=910, title='forbidden'),
                      types.ChannelForbidden(id=911, access_hash=1, title='forbidden')])
     await gateway.discover()
