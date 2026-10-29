@@ -1,7 +1,7 @@
-# 📡 Telegram → Stremio
+# 📡 HAStream
 
 <p align="center">
-  <img src="stremio_addon/icon.png" alt="Stremio Telegram addon icon" width="180" />
+  <img src="stremio_addon/icon.png" alt="HAStream addon icon" width="180" />
 </p>
 
 **Your Telegram videos, available in Stremio / Nuvio.**
@@ -74,8 +74,8 @@ Set these values in `.env` for Docker Compose. In Home Assistant, enter the corr
 | `CACHE_MB` | Disk chunk-cache limit in MiB; `0` disables new cache writes. | `false` | `512` | `1024` |
 | `CATALOG_INDEXING_ENABLED` | Build catalogs and episode lists by indexing Telegram history in the background. | `false` | `true` | `false` |
 | `CHANNEL_IDS` | Comma-separated Telegram chat IDs restricting indexing and live search. Blank selects all accessible account chats. | `false` | Empty | `-1001234567890,-1009876543210` |
-| `DISPLAY_COLLECTION` | Show Telegram Videos and Telegram Series collections on the main screen in Stremio/Nuvio. Search remains available when disabled. Restart and refresh/reinstall the addon in your client after changing it. | `false` | `false` | `true` |
-| `AI_SEARCH_ENABLED` | Adds separate **Telegram AI Movies** and **Telegram AI Series** catalogs using online search. | `false` | `false` | `true` |
+| `DISPLAY_COLLECTION` | Show HAStream Videos and HAStream Series collections on the main screen in Stremio/Nuvio. Search remains available when disabled. Restart and refresh/reinstall the addon in your client after changing it. | `false` | `false` | `true` |
+| `AI_SEARCH_ENABLED` | Adds separate **HAStream AI Movies** and **HAStream AI Series** catalogs using online search. | `false` | `false` | `true` |
 | `GEMINI_API_KEY` | Gemini API credential; required only when AI search is enabled. | Conditional | Empty | `YOUR_GEMINI_API_KEY` |
 | `REQUIRE_AI_SUFFIX_FOR_AI_SEARCH` | Require a separate final `AI` word (case insensitive) before calling Gemini, preventing unfinished searches from using API quota while typing. Applies to AI catalogs and Developer UI AI search; the suffix is removed before sending. Set `false` to allow searches without it. | `false` | `true` | `true` |
 | `TMDB_API_KEY` | Optional TMDB v3 API key. Enables saved show matching and Telegram sources for public catalog episodes. | `false` | Empty | `YOUR_TMDB_V3_API_KEY` |
@@ -117,7 +117,7 @@ Displayed titles prefer the first non-empty line of the Telegram message caption
 
 ### ✨ AI search
 
-Set `AI_SEARCH_ENABLED=true` and provide `GEMINI_API_KEY` to add separate **Telegram AI Movies** and **Telegram AI Series** catalogs. The existing **Telegram Videos** catalog keeps its ordinary text search. Reinstall or refresh the addon in your client after upgrading to discover the new catalogs.
+Set `AI_SEARCH_ENABLED=true` and provide `GEMINI_API_KEY` to add separate **HAStream AI Movies** and **HAStream AI Series** catalogs. The existing **HAStream Videos** catalog keeps its ordinary text search. Reinstall or refresh the addon in your client after upgrading to discover the new catalogs.
 
 By default, `REQUIRE_AI_SUFFIX_FOR_AI_SEARCH=true`: finish your description with a separate `AI` word when you are ready to search, for example `someone relives the same day AI`. The suffix is case insensitive (`AI`, `Ai`, `ai`, and `aI` all work). Queries without it return no AI results and make no Gemini request, preventing clients such as Nuvio from using API quota on unfinished text during pauses in typing. Trailing whitespace is ignored, and the suffix is removed before sending the description to Gemini; the description retains its original case. This applies to both AI catalogs and the Developer UI AI search form. Set `REQUIRE_AI_SUFFIX_FOR_AI_SEARCH=false` to allow AI searches without the suffix; a supplied suffix is still stripped.
 
@@ -300,7 +300,7 @@ You can also use this shortcut:
 
 ### 2. Install the add-on
 
-Find **Stremio Telegram** in the add-on store and select **Install**. Refresh the store if it has not appeared yet.
+Find **HAStream** in the add-on store and select **Install**. Refresh the store if it has not appeared yet.
 
 ### 3. Configure it
 

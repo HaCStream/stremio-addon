@@ -40,7 +40,7 @@ configuration:
   DISPLAY_COLLECTION:
     name: Display collection
     description: >-
-      Show Telegram Videos and Telegram Series collections on the main screen in
+      Show HAStream Videos and HAStream Series collections on the main screen in
       Stremio/Nuvio. Disabled by default; search remains available. Restart the
       add-on and refresh or reinstall it in your client after changing this option.
   tmdb:
@@ -59,7 +59,7 @@ configuration:
     fields:
       AI_SEARCH_ENABLED:
         name: Enable AI search
-        description: Search online and show separate Telegram AI Movies and Telegram AI Series catalogs.
+        description: Search online and show separate HAStream AI Movies and HAStream AI Series catalogs.
       GEMINI_API_KEY:
         name: Gemini API key
         description: Gemini key used for online discovery of titles matching your search description.

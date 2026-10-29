@@ -144,16 +144,16 @@ def create_app_with_runtime(runtime):
     @app.get('/{key}/manifest.json')
     async def manifest(key):
         auth(key)
-        catalogs = [{'type': 'movie', 'id': 'telegram', 'name': 'Telegram Videos', 'extra': [{'name': 'search', 'isRequired': not app.state.cfg.display_collection}, {'name': 'skip', 'isRequired': False}]}]
-        catalogs.append({'type': 'series', 'id': 'telegram-series', 'name': 'Telegram Series',
+        catalogs = [{'type': 'movie', 'id': 'telegram', 'name': 'HAStream Videos', 'extra': [{'name': 'search', 'isRequired': not app.state.cfg.display_collection}, {'name': 'skip', 'isRequired': False}]}]
+        catalogs.append({'type': 'series', 'id': 'telegram-series', 'name': 'HAStream Series',
                          'extra': [{'name': 'search', 'isRequired': not app.state.cfg.display_collection}, {'name': 'skip', 'isRequired': False}]})
         if app.state.cfg.ai_search_enabled:
             for kind, name in (('movie', 'Movies'), ('series', 'Series')):
                 catalogs.append({'type': kind, 'id': 'telegram-ai-' + kind,
-                                 'name': 'Telegram AI ' + name,
+                                 'name': 'HAStream AI ' + name,
                                  'extra': [{'name': 'search', 'isRequired': True},
                                            {'name': 'skip', 'isRequired': False}]})
-        return {'id': 'community.private.telegram', 'version': get_version(), 'name': 'Private Telegram Videos',
+        return {'id': 'community.private.telegram', 'version': get_version(), 'name': 'HAStream',
                 'description': 'Stream your private Telegram videos',
                 'logo': 'https://raw.githubusercontent.com/HaCStream/stremio-addon/main/stremio_addon/icon.png',
                 'types': ['movie', 'series'],
