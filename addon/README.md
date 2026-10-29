@@ -92,6 +92,13 @@ series search is started when opening a show.
 
 ## 💾 Local downloads
 
+Developer UI text searches load up to 100 videos per batch. Use **Load more** for
+another batch or **Load all** to continue until exhausted. Both buttons are
+disabled while fetching. Rate limits stop fetching and show when to retry;
+loaded results remain available. Requests share the account's Telegram limits.
+The table scrolls independently, with fixed desktop navigation and a floating
+navigation menu on mobile. Stremio/Nuvio searches are unchanged.
+
 In the Developer UI, **Search** includes download, pause, resume and stop/delete
 controls beside each video's caption, file name, group/channel and size.
 **Downloads** lists saved and unfinished files, supports selecting files for batch
@@ -117,3 +124,4 @@ New downloads use the original filename; duplicate names receive a numeric suffi
 Before starting or resuming a download, available media space is checked, allowing
 for other active downloads. If there is not enough, a popup explains the shortage
 and the download does not start. Deleting shows a spinner until deletion finishes.
+

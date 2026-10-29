@@ -19,6 +19,13 @@ CHUNK = 512 * 1024
 # Scope pacing to scanner tasks; playback uses the same client without this gate.
 _background_pacer = ContextVar('telegram_background_pacer', default=None)
 _live_search = ContextVar('telegram_live_search', default=False)
+_dev_search = ContextVar('telegram_dev_search', default=False)
+
+
+class DevSearchCooldown(RuntimeError):
+    def __init__(self, seconds):
+        self.seconds = max(1, int(seconds) + 1)
+        super().__init__(f'Telegram rate limited; retry in {self.seconds} seconds')
 
 
 class BackgroundClient(TelegramClient):
@@ -114,6 +121,8 @@ class Telegram:
             # Never hold the RPC lock while waiting for playback, a search or
             # pacing. Live requests can then take the next available RPC slot.
             await self.wait_background()
+            if _dev_search.get() and self.flood_until > time.monotonic():
+                raise DevSearchCooldown(self.flood_until - time.monotonic())
             delay = max(self.next_scan_request, self.flood_until) - time.monotonic()
             if delay > 0:
                 await asyncio.sleep(delay)
@@ -136,6 +145,8 @@ class Telegram:
                     logger.warning('Telegram background requests paused: retry_after_seconds=%s '
                                    'request=%s request_interval_seconds=%.2f',
                                    exc.seconds + 1, operation, self.scan_request_interval)
+                    if _dev_search.get():
+                        raise DevSearchCooldown(exc.seconds + 1) from None
                 else:
                     self.scan_request_successes += 1
                     # Recover gradually only after a sustained run without flood waits.
@@ -435,6 +446,74 @@ class Telegram:
             offset_peer = utils.get_input_peer(entity)
         return ids
 
+    async def dev_search_page(self, query, cursor=None):
+        """One Telegram page for the UI, independent of playback/catalog search caches.
+
+        Advance only after a successful RPC. Callers may retry the same cursor
+        after a cooldown or timeout without losing a page.
+        """
+        cursor = dict(cursor or {})
+        sources = sorted(self.channels) if self.channel_ids is not None else None
+        if sources is not None:
+            sources = cursor.get('sources', [c for c in sources if c in self.channel_ids])
+            if not sources:
+                raise RuntimeError('Selected chats have not been discovered yet')
+            position = cursor.get('source', 0)
+            if position >= len(sources):
+                return [], None
+            channel = sources[position]
+            if channel not in self.channels:
+                return [], {'sources': sources, 'source': position + 1}
+        live_token = _live_search.set(True)
+        dev_token = _dev_search.set(True)
+        try:
+            if sources is not None:
+                messages = await self.background_operation(
+                    self.client.get_messages, self.channels[channel], search=query,
+                    offset_id=cursor.get('id', 0), limit=100)
+                entities = {channel: self.channels[channel]}
+                next_cursor = ({'sources': sources, 'source': position, 'id': messages[-1].id}
+                               if len(messages) == 100 else
+                               {'sources': sources, 'source': position + 1})
+                if next_cursor == cursor:
+                    raise RuntimeError('Telegram repeated its search cursor; retry search')
+                if next_cursor.get('source') >= len(sources):
+                    next_cursor = None
+            else:
+                response = await self.background_operation(self.client, functions.messages.SearchGlobalRequest(
+                    q=query, filter=types.InputMessagesFilterEmpty(), min_date=None, max_date=None,
+                    offset_rate=cursor.get('rate', 0), offset_id=cursor.get('id', 0),
+                    offset_peer=cursor.get('peer', types.InputPeerEmpty()), limit=100))
+                entities = {utils.get_peer_id(e): e for e in
+                            [*getattr(response, 'chats', []), *getattr(response, 'users', [])]}
+                messages = response.messages
+                next_cursor = None
+                if len(messages) == 100 and not isinstance(response, types.messages.Messages):
+                    last = messages[-1]
+                    entity = entities.get(utils.get_peer_id(last.peer_id))
+                    if entity is None:
+                        raise RuntimeError('Telegram returned a page without its continuation peer; retry search')
+                    next_cursor = {'rate': getattr(response, 'next_rate', None) or int(last.date.timestamp()),
+                                   'id': last.id, 'peer': utils.get_input_peer(entity)}
+                    if next_cursor == cursor:
+                        raise RuntimeError('Telegram repeated its search cursor; retry search')
+            ids = []
+            for message in messages:
+                if not isinstance(message, types.Message):
+                    continue
+                channel = utils.get_peer_id(message.peer_id)
+                entity = entities.get(channel)
+                if entity is None or not self.permitted(entity):
+                    continue
+                self.channels[channel] = entity
+                item = await self.store.run(self.index, channel, message)
+                if item:
+                    ids.append(item)
+            return ids, next_cursor
+        finally:
+            _dev_search.reset(dev_token)
+            _live_search.reset(live_token)
+
     def series_sources(self, aliases):
         names = {normalize(title_from_text(alias)) for alias in aliases if normalize(title_from_text(alias))}
         return [channel for channel, entity in self.channels.items()
@@ -729,5 +808,6 @@ class Telegram:
             for _, task in pending:
                 task.cancel()
             await asyncio.gather(*(task for _, task in pending), return_exceptions=True)
+
 
 

@@ -372,6 +372,19 @@ Then open `http://127.0.0.1:8001` locally.
 - **🔄 Sync now:** stop the current indexing cycle and start fresh channel discovery and catch-up indexing. Fully indexed channels and groups are checked for new content before unfinished history scans resume from saved progress. The dashboard shows **Syncing...** until indexing finishes, then **Sync done!**. Click **Sync now** again to restart a running sync. Failures appear in the dashboard, and sync progress is logged.
 - **📝 Activity:** review recent addon activity.
 
+Text searches load up to 100 videos at a time. **Load more** fetches another batch;
+**Load all** continues through Telegram pages until exhausted. Both buttons stay
+disabled during fetching. The counter distinguishes loaded results from those
+matching your filters; it is not Telegram's total. Sparse Telegram pages can
+contain fewer than 100 videos, with more still available.
+
+Results scroll inside their own table. Desktop navigation stays at the top;
+on mobile, use the floating menu button. Pagination sessions expire after 30
+minutes of inactivity or an add-on restart; rerun the search to start again.
+If Telegram reports a rate limit, fetching stops and keeps the loaded results.
+Use **Load more** after the displayed cooldown to resume. These requests share
+your Telegram account's limits. Stremio/Nuvio search behavior is unchanged.
+
 For connection and indexing details, use the protected endpoint:
 
 ```text
@@ -499,3 +512,4 @@ to continue from disk, repeating at most one 512 KiB chunk. Closing the browser
 leaves active downloads running. New downloads use the original filename, sanitized for filesystem safety. If a name
 is already in use, a numeric suffix is added, such as `video (1).mp4`. Existing
 downloads keep their saved names and remain resumable.
+
