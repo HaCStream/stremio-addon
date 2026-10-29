@@ -1,5 +1,6 @@
 """Persistent, independently concurrent downloads owned by the Developer UI."""
 import asyncio
+import ctypes
 import json
 import logging
 import os
@@ -29,8 +30,19 @@ async def disk(function, *args):
 def filename(value):
     value = ''.join(c for c in value if not unicodedata.category(c).startswith('C'))
     value = re.sub(r'[/\\:*?"<>|]', '_', value).strip(' .')
-    # Leave room for the unique prefix and .part within NAME_MAX (UTF-8 bytes).
+    # Leave room for collision suffixes and .part within NAME_MAX (UTF-8 bytes).
     return value.encode('utf-8')[:180].decode('utf-8', errors='ignore') or 'video.bin'
+
+
+def rename_download(source, destination):
+    # Linux renameat2 keeps publication atomic without replacing a file that
+    # appeared after allocation. Unlike hard links, it needs no AppArmor change.
+    rename = ctypes.CDLL(None, use_errno=True).renameat2
+    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    if rename(-100, os.fsencode(source), -100, os.fsencode(destination), 1):
+        number = ctypes.get_errno()
+        raise OSError(number, os.strerror(number))
 
 
 class Downloads:
@@ -52,11 +64,16 @@ class Downloads:
         for job in data:
             if not re.fullmatch(r'[a-f0-9]{32}', job['id']):
                 raise ValueError('Invalid saved download ID')
-            if job['name'] != job['id'] + '-' + filename(job['row']['filename'] or 'video.bin'):
+            base = filename(job['row']['filename'] or 'video.bin')
+            stem, extension = Path(base).stem, Path(base).suffix
+            legacy = job['name'] == job['id'] + '-' + base
+            if not (legacy or job['name'] == base or re.fullmatch(
+                    re.escape(stem) + r' \([1-9]\d*\)' + re.escape(extension), job['name'])):
                 raise ValueError('Invalid saved download filename')
             self.jobs[job['id']] = job
             final, part = self.paths(job)
-            if final.is_file() and not final.is_symlink():
+            if final.is_file() and not final.is_symlink() and (legacy or job['status'] == 'completed'
+                    or job['downloaded'] == job['row']['size'] and not part.exists()):
                 job.update(status='completed', downloaded=final.stat().st_size, error=None)
             else:
                 job.update(status='paused', downloaded=part.stat().st_size if part.is_file() else 0,
@@ -83,6 +100,18 @@ class Downloads:
                      downloaded=j['downloaded'], status=j['status'], error=j['error'])
                 for j in self.jobs.values()]
 
+    def available_name(self, original):
+        base = filename(original or 'video.bin')
+        # Include both final and partial names, even for jobs not yet started.
+        occupied = {path.name.casefold() for path in self.root.iterdir()}
+        for job in self.jobs.values():
+            occupied.update(path.name.casefold() for path in self.paths(job))
+        candidate, number = base, 0
+        while candidate.casefold() in occupied or (candidate + '.part').casefold() in occupied:
+            number += 1
+            candidate = f'{Path(base).stem} ({number}){Path(base).suffix}'
+        return candidate
+
     async def create(self, row):
         async with self.lock:
             existing = next((j for j in self.jobs.values() if j['row']['id'] == row['id']), None)
@@ -90,7 +119,8 @@ class Downloads:
                 return existing['id']
             await disk(self.root.mkdir, 0o755, True, True)
             identifier = uuid4().hex
-            job = dict(id=identifier, name=identifier + '-' + filename(row['filename'] or 'video.bin'),
+            name = await disk(self.available_name, row['filename'])
+            job = dict(id=identifier, name=name,
                        row=dict(row), downloaded=0, status='downloading', error=None)
             self.jobs[identifier] = job
             try:
@@ -120,8 +150,10 @@ class Downloads:
                     job['status'] = 'paused'
             elif action == 'delete':
                 # Unlink only our exact generated paths, never arbitrary UI paths.
-                for path in self.paths(job):
-                    await disk(path.unlink, True)
+                final, part = self.paths(job)
+                if job['status'] == 'completed':
+                    await disk(final.unlink, True)
+                await disk(part.unlink, True)
                 del self.jobs[identifier]
                 self.tasks.pop(identifier, None)
             else:
@@ -213,12 +245,13 @@ class Downloads:
                 refreshed = False
                 offset += len(chunk)
                 job['downloaded'] = offset
-            await disk(part.rename, final)
+            await self.save()
+            await disk(rename_download, part, final)
             job.update(status='completed', error=None)
             logger.info('Local download completed: id=%s', job['id'])
         except asyncio.CancelledError:
             # The disk helper has joined pending writes before we report paused.
-            if final.is_file() and not final.is_symlink():
+            if final.is_file() and not final.is_symlink() and not part.exists() and job['downloaded'] == row['size']:
                 job.update(status='completed', downloaded=final.stat().st_size)
             else:
                 job.update(status='paused', downloaded=part.stat().st_size if part.exists() else 0)

@@ -494,5 +494,6 @@ Partial files use `.part` and are renamed only after all bytes arrive. Job state
 is kept in the existing data volume; keep both that volume and the media mount
 across recreations. After a restart unfinished jobs are **paused**; click Resume
 to continue from disk, repeating at most one 512 KiB chunk. Closing the browser
-leaves active downloads running. Saved names include a unique prefix to avoid
-filename collisions; the original filename remains visible in the UI.
+leaves active downloads running. New downloads use the original filename, sanitized for filesystem safety. If a name
+is already in use, a numeric suffix is added, such as `video (1).mp4`. Existing
+downloads keep their saved names and remain resumable.

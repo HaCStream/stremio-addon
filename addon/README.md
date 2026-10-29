@@ -110,3 +110,6 @@ After restarting the add-on, unfinished jobs appear paused: **Resume** continues
 from the partial file. Low disk space or access errors show a failed status;
 fix the cause and resume. Keep the add-on data and media files to retain resume
 state. Only downloads created by this feature are managed by this screen.
+
+New downloads use the original filename; duplicate names receive a numeric suffix
+(such as `video (1).mp4`). Existing downloads keep their saved names.

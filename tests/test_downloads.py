@@ -233,3 +233,79 @@ def test_download_api_auth_source_scope_and_batch_delete(tmp_path):
         assert result.json() == {'downloads': []}
         app.state.runtime.tg.channels.clear()
         assert client.post('/api/downloads', json={'source_id': row()['id']}, headers=headers).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_original_filename_and_numbered_collisions(tmp_path):
+    m = manager(tmp_path, b'video')
+    m.root.mkdir()
+    (m.root / 'סרט.mp4').write_bytes(b'existing')
+    (m.root / 'סרט (1).mp4.part').write_bytes(b'other partial')
+    ids = await asyncio.gather(*(m.create(row(id=f'tg:1:{i}', size=5, filename='סרט.mp4')) for i in range(2)))
+    assert [m.jobs[i]['name'] for i in ids] == ['סרט (2).mp4', 'סרט (3).mp4']
+    for identifier in ids:
+        assert (await finished(m, identifier))['status'] == 'completed'
+    assert (m.root / 'סרט.mp4').read_bytes() == b'existing'
+    assert (m.root / 'סרט (1).mp4.part').read_bytes() == b'other partial'
+    plain = await m.create(row(id='tg:1:plain', size=5, filename='original.mp4'))
+    assert (await finished(m, plain))['name'] == 'original.mp4'
+    assert (m.root / 'original.mp4').read_bytes() == b'video'
+    await m.close()
+    recovered = manager(tmp_path, b'video')
+    await recovered.start()
+    assert recovered.jobs[plain]['status'] == 'completed'
+    assert recovered.jobs[ids[0]]['name'] == 'סרט (2).mp4'
+    await recovered.close()
+
+
+@pytest.mark.asyncio
+async def test_legacy_hashed_downloads_still_load_and_resume(tmp_path):
+    from stremio_addon.downloads import filename
+    m = manager(tmp_path, b'video')
+    m.root.mkdir()
+    rows = [row(id=f'tg:1:{i}', filename=f'old{i}.mp4', size=5) for i in range(2)]
+    jobs = [dict(id=str(i + 1) * 32, name=str(i + 1) * 32 + '-' + filename(r['filename']),
+                 row=r, downloaded=5 if i == 0 else 0, status='completed' if i == 0 else 'downloading', error=None)
+            for i, r in enumerate(rows)]
+    m.paths(jobs[0])[0].write_bytes(b'video')
+    m.paths(jobs[1])[1].write_bytes(b'vi')
+    m.manifest.write_text(json.dumps(jobs))
+    await m.start()
+    assert m.jobs[jobs[0]['id']]['status'] == 'completed'
+    assert m.jobs[jobs[1]['id']]['status'] == 'paused'
+    await m.action(jobs[1]['id'], 'resume')
+    assert (await finished(m, jobs[1]['id']))['status'] == 'completed'
+    assert m.paths(jobs[1])[0].read_bytes() == b'video'
+    await m.close()
+
+
+@pytest.mark.asyncio
+async def test_file_created_during_download_is_not_overwritten_or_deleted(tmp_path):
+    m = manager(tmp_path, b'video')
+    m.runtime.tg.gates[0] = asyncio.Event()
+    identifier = await m.create(row(size=5, filename='original.mp4'))
+    await m.runtime.tg.started.get()
+    final, part = m.paths(m.jobs[identifier])
+    final.write_bytes(b'keep external file')
+    m.runtime.tg.gates[0].set()
+    assert (await finished(m, identifier))['status'] == 'failed'
+    assert final.read_bytes() == b'keep external file'
+    assert part.read_bytes() == b'video'
+    await m.close()
+    recovered = manager(tmp_path, b'video')
+    await recovered.start()
+    assert recovered.jobs[identifier]['status'] == 'paused'
+    await recovered.action(identifier, 'delete')
+    assert final.read_bytes() == b'keep external file'
+    assert not part.exists()
+    await recovered.close()
+
+
+@pytest.mark.asyncio
+async def test_manifest_cannot_point_outside_download_directory(tmp_path):
+    m = manager(tmp_path, b'video')
+    m.manifest.write_text(json.dumps([dict(id='1' * 32, name='../outside.mp4',
+                                        row=row(filename='original.mp4'), downloaded=0,
+                                        status='paused', error=None)]))
+    with pytest.raises(ValueError, match='Invalid saved download filename'):
+        await m.start()
