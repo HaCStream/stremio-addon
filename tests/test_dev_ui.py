@@ -259,3 +259,36 @@ handler({target:{closest:()=>null}});
 assert.equal(hidden,true);
 '''
     subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)
+
+
+def test_search_sorting_and_combined_size_group_filters():
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('Node is required to execute the Developer UI JavaScript')
+    html = (Path(__file__).parents[1] / 'stremio_addon' / 'debug.html').read_text()
+    filtering = 'function filteredSearchRows()' + html.split('function filteredSearchRows()', 1)[1].split(
+        'function resetSearchFilters()', 1)[0]
+    script = r'''
+const assert=require('node:assert/strict');
+const searchRows=[
+  {id:'a',title:'Zulu',caption:'Bravo',channel:'One',channel_id:1,size:10},
+  {id:'b',title:'Alpha',caption:'Charlie',channel:'Two',channel_id:2,size:2},
+  {id:'c',title:'Beta',caption:'Alpha',channel:'One',channel_id:1,size:100}
+];
+let searchSort={key:null,direction:1},searchSize={min:0,max:100},selectedSearchGroups=new Set(['1','2']);
+''' + filtering + r'''
+const ids=()=>filteredSearchRows().map(row=>row.id);
+assert.deepEqual(ids(),['a','b','c']);
+for(const [key,expected] of [['title',['b','c','a']],['caption',['c','a','b']],['channel',['a','c','b']],['size',['b','a','c']]]){
+  searchSort={key,direction:1};assert.deepEqual(ids(),expected);
+  searchSort.direction=-1;
+  if(key!=='channel')assert.deepEqual(ids(),[...expected].reverse());
+}
+searchSort={key:'size',direction:1};searchSize={min:10,max:100};
+selectedSearchGroups=new Set(['1']);assert.deepEqual(ids(),['a','c']);
+searchSize.max=99;assert.deepEqual(ids(),['a']);
+searchSize.min=10;searchSize.max=10;assert.deepEqual(ids(),['a']);
+selectedSearchGroups.clear();assert.deepEqual(ids(),[]);
+assert.deepEqual(searchRows.map(row=>row.id),['a','b','c']);
+'''
+    subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)
