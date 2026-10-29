@@ -1,5 +1,15 @@
 # Changelog
 
+<!-- release:1.7.3:start -->
+## 1.7.3
+
+## What's Changed
+* Add paginated developer UI search and responsive navigation by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/65
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.7.2...v1.7.3
+<!-- release:1.7.3:end -->
+
 <!-- release:1.7.2:start -->
 ## 1.7.2
 
