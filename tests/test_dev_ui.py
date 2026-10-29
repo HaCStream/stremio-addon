@@ -227,7 +227,7 @@ assert.ok(result.includes('deleting-icon'));assert.ok(result.includes('aria-busy
     saved = html.split('<section id="downloads"', 1)[1].split('</section>', 1)[0]
     ai = html.split('<section id="ai"', 1)[1].split('</section>', 1)[0]
     assert 'Streaming may slow down while downloads are in progress.' in search
-    assert 'debug Stremio / Nuvio search results' in search
+    assert 'debug Stremio / Nuvio search results' not in search
     assert 'ai-search-form' not in search
     assert 'ai-search-form' in ai and 'gemini-exchange' in ai
     assert 'search-form' not in saved
@@ -293,4 +293,75 @@ searchSize.min=10;searchSize.max=10;assert.deepEqual(ids(),['a']);
 selectedSearchGroups.clear();assert.deepEqual(ids(),[]);
 assert.deepEqual(searchRows.map(row=>row.id),['a','b','c']);
 '''
+    subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)
+
+
+
+def test_dev_ui_pagination_serializes_requests_and_stops_on_warning():
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('Node is required')
+    html = (Path(__file__).parents[1] / 'stremio_addon' / 'debug.html').read_text()
+    busy = 'function setSearchBusy(' + html.split('function setSearchBusy(', 1)[1].split('function appendSearchPage(', 1)[0]
+    fetcher = 'async function fetchSearchPages(' + html.split('async function fetchSearchPages(', 1)[1].split("document.querySelector('#load-more-results')", 1)[0]
+    script = r"""
+const assert=require('node:assert/strict');
+const nodes=new Map();
+const document={querySelector:id=>{if(!nodes.has(id))nodes.set(id,{disabled:false,textContent:'',setAttribute(){}});return nodes.get(id)}};
+let searchCursor=null,searchParams={q:'test',mode:'text'},searchBusy=false,searchHasMore=true,searchRows=[];
+let calls=0,resolvePage;
+let api=async()=>{calls++;return await new Promise(resolve=>resolvePage=resolve)};
+function appendSearchPage(d){searchRows.push(...d.results);searchCursor=d.cursor;searchHasMore=d.has_more}
+""" + busy + fetcher + r"""
+(async()=>{
+ const running=fetchSearchPages(true);
+ assert.ok(searchBusy);
+ assert.ok(document.querySelector('#load-more-results').disabled);
+ assert.ok(document.querySelector('#load-all-results').disabled);
+ await fetchSearchPages();assert.equal(calls,1);
+ resolvePage({results:[{id:'1'}],cursor:'next',has_more:true});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(calls,2);assert.ok(searchBusy);
+ resolvePage({results:[],cursor:'retry',has_more:true,warning:'retry in 10 seconds'});
+ await running;
+ assert.equal(calls,2);assert.equal(searchRows.length,1);assert.equal(searchCursor,'retry');
+ assert.ok(!searchBusy);assert.ok(!document.querySelector('#load-more-results').disabled);
+ assert.equal(document.querySelector('#search-page-status').textContent,'retry in 10 seconds');
+ api=async url=>{assert.ok(url.includes('cursor=retry'));return {results:[{id:'2'}],cursor:null,has_more:false}};
+ await fetchSearchPages();
+ assert.equal(searchRows.length,2);assert.ok(document.querySelector('#load-all-results').disabled);
+ searchHasMore=true;api=async()=>{throw Error('network error')};
+ await fetchSearchPages();assert.ok(!searchBusy);assert.equal(searchRows.length,2);
+ assert.ok(!document.querySelector('#load-more-results').disabled);
+})().catch(error=>{console.error(error);process.exitCode=1});
+"""
+    subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)
+
+
+def test_appending_search_pages_preserves_active_filters_sort_and_scroll():
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('Node is required')
+    html = (Path(__file__).parents[1] / 'stremio_addon' / 'debug.html').read_text()
+    filters = 'function resetSearchFilters(' + html.split('function resetSearchFilters(', 1)[1].split('function renderGroupPicker(', 1)[0]
+    append = 'function appendSearchPage(' + html.split('function appendSearchPage(', 1)[1].split('async function fetchSearchPages(', 1)[0]
+    script = r"""
+const assert=require('node:assert/strict');
+const nodes=new Map();
+const document={querySelector:id=>{if(!nodes.has(id))nodes.set(id,{textContent:'',innerHTML:'',scrollTop:90,scrollLeft:40,classList:{remove(){}},getAttribute(){return 'false'}});return nodes.get(id)}};
+const esc=String,fmtBytes=String,actionButton=()=>'',renderSearchResults=()=>{};
+let searchRows=[],searchGroups=[],selectedSearchGroups=new Set(),searchSize={min:0,max:0},searchCursor=null,searchHasMore=false;
+let searchSort={key:'size',direction:-1};
+""" + filters + append + r"""
+const page=results=>({results,cursor:'next',has_more:true,channels_queried:[],normalized_query:'test'});
+appendSearchPage(page([{id:'1',size:10,channel_id:1},{id:'2',size:20,channel_id:2}]));
+assert.equal(selectedSearchGroups.size,2);assert.deepEqual(searchSize,{min:10,max:20});
+appendSearchPage(page([{id:'3',size:100,channel_id:3}]));
+assert.equal(selectedSearchGroups.size,3);assert.equal(searchSize.max,100);
+selectedSearchGroups=new Set(['1']);searchSize={min:12,max:18};
+appendSearchPage(page([{id:'4',size:200,channel_id:4},{id:'3',size:100,channel_id:3}]));
+assert.deepEqual([...selectedSearchGroups],['1']);assert.deepEqual(searchSize,{min:12,max:18});
+assert.equal(searchRows.length,4);assert.deepEqual(searchSort,{key:'size',direction:-1});
+assert.equal(document.querySelector('#results').scrollTop,90);assert.equal(document.querySelector('#results').scrollLeft,40);
+"""
     subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)

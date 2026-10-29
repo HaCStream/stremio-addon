@@ -16,6 +16,7 @@ from .ai_search import ai_query, GeminiCooldown, gemini_diagnostics
 from .core import normalize, source_name
 from .version import get_version
 from .downloads import InsufficientSpace
+from .dev_search import DevSearch
 
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ def create_debug_app(runtime):
     async def lifespan(app):
         shared = await runtime.acquire()
         app.state.runtime = shared
+        app.state.dev_search = DevSearch(shared.store, shared.tg)
         try:
             yield
         finally:
@@ -294,6 +296,42 @@ def create_debug_app(runtime):
             raise HTTPException(404, 'Download not found') from None
         return {'downloads': app.state.runtime.downloads.listing()}
 
+    @app.get('/api/search/pages')
+    async def search_page(q: str = Query('', max_length=500),
+                          mode: str = Query('text', pattern='^(text|imdb)$'),
+                          kind: str = Query('movie', pattern='^(movie|series)$'),
+                          cursor: str | None = Query(None, max_length=100),
+                          x_debug_key: str | None = Header(None)):
+        authorize(x_debug_key)
+        shared = app.state.runtime
+        pager = app.state.dev_search
+        started = time.perf_counter()
+        try:
+            if cursor is None:
+                rows = None
+                if mode == 'imdb':
+                    rows, _ = await shared.search.match(kind, q.strip())
+                cursor = await pager.start(q, rows)
+            page = await pager.page(cursor)
+        except KeyError:
+            raise HTTPException(410, 'Search expired; run the search again') from None
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc)) from None
+        items = [result_row(row, reason if mode == 'text' else 'metadata lookup')
+                 for row, reason in page['matched']]
+        available = await channels()
+        counts = {}
+        for item in items:
+            key = str(item['channel_id'])
+            counts[key] = counts.get(key, 0) + 1
+        shared.record({'event': 'debug_search', 'query': safe_text(q), 'mode': mode, 'type': kind,
+                       'result_count': len(items), 'channel_count': len(available),
+                       'duration_ms': round((time.perf_counter() - started) * 1000, 1), 'status': 200})
+        return {**{k: v for k, v in page.items() if k != 'matched'}, 'results': items, 'result_count': len(items),
+                'query': q, 'normalized_query': normalize(q), 'mode': mode,
+                'channels_queried': available, 'results_by_channel': counts,
+                'duration_ms': round((time.perf_counter() - started) * 1000, 1)}
+
     @app.get('/api/search')
     async def search(
         q: str = Query('', max_length=500),
@@ -374,4 +412,5 @@ def create_debug_app(runtime):
         }
 
     return app
+
 
