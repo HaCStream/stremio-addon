@@ -1,5 +1,16 @@
 # Changelog
 
+<!-- release:1.7.0:start -->
+## 1.7.0
+
+## What's Changed
+* Add local video downloads and management to Developer UI by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/60
+* Rename project branding to HAStream by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/61
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.6.11...v1.7.0
+<!-- release:1.7.0:end -->
+
 <!-- release:1.6.11:start -->
 ## 1.6.11
 
