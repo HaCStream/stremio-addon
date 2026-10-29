@@ -61,7 +61,7 @@ def main():
     logging.basicConfig(level=logging.INFO, stream=sys.stdout,
                         format="%(asctime)s %(levelname)s: %(name)s: %(message)s",
                         datefmt="%Y-%m-%dT%H:%M:%S%z")
-    logging.getLogger(__name__).info("Starting Stremio Telegram on port %s%s", settings.port, debug)
+    logging.getLogger(__name__).info("Starting HAStream on port %s%s", settings.port, debug)
     os.execv(sys.executable, [sys.executable, "-m", "addon"])
 
 

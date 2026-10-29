@@ -133,7 +133,7 @@ def test_catalog_types_suffix_playback_and_errors(tmp_path, suffix_required):
     with TestClient(create_app_with_runtime(runtime)) as client:
         manifest = client.get(f'/{cfg.key}/manifest.json').json()
         assert [(c['name'], c['type']) for c in manifest['catalogs']] == [
-            ('Telegram Videos', 'movie'), ('Telegram Series', 'series'), ('Telegram AI Movies', 'movie'), ('Telegram AI Series', 'series')]
+            ('HAStream Videos', 'movie'), ('HAStream Series', 'series'), ('HAStream AI Movies', 'movie'), ('HAStream AI Series', 'series')]
         calls = []
         async def discover(query):
             calls.append(query)
@@ -254,7 +254,7 @@ def test_disabled_ai(tmp_path):
     cfg = Settings(8000, 'https://example.com', 'a' * 32, 1, 'hash', 'session', tmp_path)
     runtime = Runtime(cfg, FakeTelegram)
     with TestClient(create_app_with_runtime(runtime)) as client:
-        assert [x['name'] for x in client.get(f'/{cfg.key}/manifest.json').json()['catalogs']] == ['Telegram Videos', 'Telegram Series']
+        assert [x['name'] for x in client.get(f'/{cfg.key}/manifest.json').json()['catalogs']] == ['HAStream Videos', 'HAStream Series']
     with TestClient(create_debug_app(runtime)) as client:
         headers = {'X-Debug-Key': cfg.key}
         assert client.get('/api/search?mode=ai&q=anything', headers=headers).status_code == 409

@@ -1,4 +1,4 @@
-# Stremio Telegram for Home Assistant
+# HAStream for Home Assistant
 
 The add-on supports **amd64 (x86-64)** and **aarch64 (ARM64)** hosts.
 Home Assistant pulls `ghcr.io/hacstream/stremio-addon` using the version in
@@ -28,7 +28,7 @@ both this HA-specific Dockerfile and the published repository-root Dockerfile.
 
 After publishing a release containing both architectures, add
 `https://github.com/HaCStream/stremio-addon` in Home Assistant's add-on store
-repository menu. Install **Stremio Telegram** on an amd64 or aarch64 installation.
+repository menu. Install **HAStream** on an amd64 or aarch64 installation.
 
 Alternatively, copy this entire folder to `/addons/stremio-telegram` on
 Home Assistant, reload the add-on store, and install the local entry. It still
@@ -85,9 +85,9 @@ https://YOUR_DOMAIN/YOUR_ADDON_ACCESS_KEY/manifest.json
 
 The protected `/<your-api-key>/status` endpoint shows Telegram indexing progress.
 Files containing episode markers such as `S01E02`, `S01 E02`, or
-`עונה 1 פרק 2` appear once per show in **Telegram Series**. Opening a show lists
+`עונה 1 פרק 2` appear once per show in **HAStream Series**. Opening a show lists
 its indexed episodes in season/episode order; multiple files for the same episode
-appear as separate playback choices. These files are excluded from **Telegram Videos**.
+appear as separate playback choices. These files are excluded from **HAStream Videos**.
 AI series results use the same grouping. Existing entries are updated automatically
 on the first startup after upgrading, without a Telegram rescan.
 Text search indexes the displayed title, original filename, and caption, so a
@@ -113,7 +113,7 @@ and episode numbers.
 Optional AI search is configured with `AI_SEARCH_ENABLED`, `GEMINI_API_KEY`,
 and `REQUIRE_AI_SUFFIX_FOR_AI_SEARCH` under **AI search** in the Configuration
 tab. Developer UI settings are grouped under **Developer UI**. Enabling AI adds
-separate **Telegram AI Movies** and **Telegram AI Series** catalogs. Gemini uses
+separate **HAStream AI Movies** and **HAStream AI Series** catalogs. Gemini uses
 Google Search to find up to five titles per category, then the addon returns only
 titles matched in the local Telegram index. Only the search description is sent
 to Gemini; no indexed content or video data is sent.
