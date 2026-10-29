@@ -16,6 +16,9 @@ startup: application
 boot: auto
 init: false
 apparmor: true
+map:
+  - type: media
+    read_only: false
 ports:
   8000/tcp: 8000
   8001/tcp: 8001

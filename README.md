@@ -457,3 +457,42 @@ Telegram cooldowns, and both pause during playback. Search traffic can consequen
 slow indexing. Catalogs and episode lists may be incomplete until indexing catches
 up, and a client that cached an older list may need to refresh it. No full-history
 series search is started when opening a show.
+
+## 💾 Save videos locally
+
+Enable the Developer UI and open **Search**. Results show the caption, original file
+name, group/channel and size alongside **Download**, **Pause**, **Resume**, and
+**Stop & delete** controls. Search retains lookup diagnostics; Gemini's request,
+response and AI search tools are in **AI debug**.
+
+**Downloads** manages saved and unfinished files, with **Select all**, **Clear
+selection**, and **Delete selected**. Its **Search for videos** button opens the
+existing Search screen. Deleting an unfinished download stops it and removes its
+partial file. Only files created by this feature are listed and managed.
+
+Files are saved on the **container host**, not the device running the browser.
+Compose mounts `./telegram-downloads` to `/media/telegram-downloads:rw`; replace the host side
+with your preferred directory, for example `/srv/telegram-downloads`. Ensure it is
+writable by the container user. For `docker run`, add
+`-v /srv/telegram-downloads:/media/telegram-downloads:rw`. Without a mount, files live
+inside the container and will be lost when it is recreated.
+
+Home Assistant mounts its shared `/media` directory writable. Files appear under
+`/media/telegram-downloads` and can be accessed through a separately configured
+file share. The bundled AppArmor profile permits writes only to that subdirectory
+within `/media`; keep AppArmor and protection mode enabled. A media mount, writable
+filesystem permissions, and the AppArmor rules are all required.
+
+Downloads have **no application-imposed concurrency limit**. Telegram flood waits
+pause new download requests for the requested delay. Downloads yield between chunks
+to playback (including its two-second grace period), but in-flight requests and
+shared bandwidth/disk I/O may still slow streaming. Continuous playback can delay
+completion. Free space is checked before each chunk; storage errors mark the job
+failed so it can be resumed after fixing the problem.
+
+Partial files use `.part` and are renamed only after all bytes arrive. Job state
+is kept in the existing data volume; keep both that volume and the media mount
+across recreations. After a restart unfinished jobs are **paused**; click Resume
+to continue from disk, repeating at most one 512 KiB chunk. Closing the browser
+leaves active downloads running. Saved names include a unique prefix to avoid
+filename collisions; the original filename remains visible in the UI.

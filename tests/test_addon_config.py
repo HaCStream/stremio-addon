@@ -44,3 +44,15 @@ def test_nested_options_reach_application_environment():
     assert env["AI_SEARCH_ENABLED"] == "True"
     assert env["GEMINI_API_KEY"] == "secret"
     assert env["REQUIRE_AI_SUFFIX_FOR_AI_SEARCH"] == "False"
+
+
+def test_local_download_mount_and_apparmor_scope():
+    config = yaml.safe_load(Path('addon/config.yaml').read_text())
+    assert {'type': 'media', 'read_only': False} in config['map']
+    assert config['apparmor'] is True
+    profile = Path('addon/apparmor.txt').read_text()
+    assert '/media/telegram-downloads/ rw,' in profile
+    assert '/media/telegram-downloads/** rw,' in profile
+    assert '/media/** rw' not in profile
+    compose = yaml.safe_load(Path('compose.yaml').read_text())
+    assert './telegram-downloads:/media/telegram-downloads:rw' in compose['services']['addon']['volumes']

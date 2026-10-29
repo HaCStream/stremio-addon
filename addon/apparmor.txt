@@ -53,6 +53,10 @@ profile stremio_telegram flags=(attach_disconnected,mediate_deleted) {
   /dev/std{in,out,err} rw,
   /proc/*/fd/[012] rw,
 
+  # Shared media: local video downloads only.
+  /media/telegram-downloads/ rw,
+  /media/telegram-downloads/** rw,
+
   # Supervisor owns options.json. Only application data may be changed.
   /data/ r,
   /data/options.json r,
