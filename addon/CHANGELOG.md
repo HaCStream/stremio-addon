@@ -1,5 +1,15 @@
 # Changelog
 
+<!-- release:1.7.1:start -->
+## 1.7.1
+
+## What's Changed
+* Make Developer UI tables resizable and compact search results by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/62
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.7.0...v1.7.1
+<!-- release:1.7.1:end -->
+
 <!-- release:1.7.0:start -->
 ## 1.7.0
 
