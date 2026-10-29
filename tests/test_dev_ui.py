@@ -197,7 +197,7 @@ def test_download_controls_follow_job_state_and_escape_metadata():
     if not node:
         pytest.skip('Node is required to execute the Developer UI JavaScript')
     html = (Path(__file__).parents[1] / 'stremio_addon' / 'debug.html').read_text()
-    controls = 'function downloadControls(' + html.split('function downloadControls(', 1)[1].split('\nfunction renderSearchResults', 1)[0]
+    controls = 'function actionIcon(' + html.split('function actionIcon(', 1)[1].split('\nfunction renderSearchResults', 1)[0]
     esc = 'const esc=' + html.split('const esc=', 1)[1].split('\nconst ingressUrl', 1)[0]
     script = "const assert=require('node:assert/strict');\n" + esc + r'''
 const fmtBytes=n=>n+' B',busyDownloads=new Set();
@@ -205,18 +205,18 @@ let downloadRows=[];
 ''' + controls + r'''
 const source={id:'tg:1:"<script>'};
 let result=downloadControls(source);
-assert.ok(result.includes('Download</button>'));
+assert.ok(result.includes('aria-label="Download"'));
 assert.ok(!result.includes('<script>'));
 const job={id:'job',source_id:source.id,status:'downloading',downloaded:5,size:10};
 downloadRows=[job];
-result=downloadControls(source);assert.ok(result.includes('Pause</button>'));
-assert.ok(result.includes('5 B / 10 B'));assert.ok(result.includes('Stop & delete'));
-job.status='paused';result=downloadControls(source);assert.ok(result.includes('Resume</button>'));
+result=downloadControls(source);assert.ok(result.includes('aria-label="Pause"'));
+assert.ok(result.includes('5 B / 10 B'));assert.ok(result.includes('Stop &amp; delete'));
+job.status='paused';result=downloadControls(source);assert.ok(result.includes('aria-label="Resume"'));
 job.status='failed';job.error='<script>error</script>';
-result=downloadControls(source);assert.ok(result.includes('Resume</button>'));
+result=downloadControls(source);assert.ok(result.includes('aria-label="Resume"'));
 assert.ok(!result.includes('<script>error'));
-job.status='completed';result=downloadControls(source);assert.ok(result.includes('Delete</button>'));
-assert.ok(!result.includes('Resume</button>'));assert.ok(!result.includes('Pause</button>'));
+job.status='completed';result=downloadControls(source);assert.ok(result.includes('aria-label="Delete"'));
+assert.ok(!result.includes('aria-label="Resume"'));assert.ok(!result.includes('aria-label="Pause"'));
 job.status='downloading';busyDownloads.add('job');
 assert.ok(downloadControls(source).includes('disabled'));
 '''
@@ -230,3 +230,32 @@ assert.ok(downloadControls(source).includes('disabled'));
     assert 'ai-search-form' in ai and 'gemini-exchange' in ai
     assert 'search-form' not in saved
     assert 'Select all' in saved and 'Clear selection' in saved and 'Search for videos' in saved
+
+
+def test_search_group_counts_toggle_from_icon_click():
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('Node is required to execute the Developer UI JavaScript')
+    html = (Path(__file__).parents[1] / 'stremio_addon' / 'debug.html').read_text()
+    toggle = "document.querySelector('#search-summary').addEventListener('click',event=>{" + html.split(
+        "document.querySelector('#search-summary').addEventListener('click',event=>{", 1)[1].split(
+        "document.querySelector('#search-form').onsubmit=", 1)[0]
+    script = r'''
+const assert=require('node:assert/strict');
+let handler,hidden=true;
+const attributes={'aria-expanded':'false'};
+const button={getAttribute:name=>attributes[name],setAttribute:(name,value)=>attributes[name]=value};
+const document={querySelector:selector=>selector==='#search-summary'?
+  {addEventListener:(name,fn)=>handler=fn}:{classList:{toggle:(name,value)=>hidden=value}}};
+''' + toggle + r'''
+const iconClick={target:{closest:selector=>button}};
+handler(iconClick);
+assert.equal(hidden,false);assert.equal(attributes['aria-expanded'],'true');
+assert.equal(attributes['aria-label'],'Hide results by group');
+handler(iconClick);
+assert.equal(hidden,true);assert.equal(attributes['aria-expanded'],'false');
+assert.equal(attributes['aria-label'],'Show results by group');
+handler({target:{closest:()=>null}});
+assert.equal(hidden,true);
+'''
+    subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)

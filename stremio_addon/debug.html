@@ -9,6 +9,8 @@
     #tmdb-save label{display:grid;gap:5px}#tmdb-save input{width:100%}
     header{gap:14px}header>div:first-child{flex-shrink:0}header nav{flex:1;justify-content:flex-end}.refresh-control{margin-left:auto;position:relative;align-self:center}#refresh{display:grid;place-items:center;width:40px;height:40px;padding:8px;background:transparent;border:0}#refresh:disabled{opacity:1}#refresh .refresh-tick{display:none}#refresh.refreshing svg{animation:refresh-spin .8s linear infinite}#refresh.success{color:var(--green)}#refresh.success .refresh-arrow{display:none}#refresh.success .refresh-tick{display:block}#refresh-status{position:absolute;right:0;top:100%;width:max-content;max-width:260px;background:var(--panel);z-index:1}#refresh-status:empty{display:none}@keyframes refresh-spin{to{transform:rotate(360deg)}}@media(max-width:700px){header{display:grid;grid-template-columns:minmax(0,1fr) auto}header nav{grid-row:2;grid-column:1/-1;justify-content:flex-start}.refresh-control{grid-column:2;grid-row:1}}
     .download-warning{display:flex;align-items:flex-start;gap:10px;margin:14px 0;padding:14px 16px;border:1px solid #b88a2c;border-radius:10px;background:#302616;color:#ffe3a0}.download-warning-icon{flex-shrink:0;font-size:20px;line-height:1.2}
+    table.resizable-table{table-layout:fixed}table.resizable-table th{position:relative;padding-right:18px}table.resizable-table th,table.resizable-table td{overflow-wrap:anywhere;min-width:0}.column-resizer{position:absolute;right:0;top:0;bottom:0;width:12px;cursor:col-resize;touch-action:none;border-right:2px solid var(--line)}.column-resizer:hover,.column-resizer:focus-visible{border-color:var(--blue);background:#64b5f626;outline:2px solid var(--blue);outline-offset:-2px}body.resizing-columns,body.resizing-columns *{cursor:col-resize!important;user-select:none!important}.file-name{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}.icon-button{display:inline-grid;place-items:center;width:36px;height:36px;padding:7px;margin:3px 3px 0 0}.icon-button svg{width:19px;height:19px;pointer-events:none}@media(max-width:700px){#channels col:nth-child(2){display:none}}
+    .group-results{flex-basis:100%;border:1px solid var(--line);border-radius:8px;padding:8px 14px}.group-results ul{list-style:none;padding:0;margin:0}.group-results li{padding:5px 0;overflow-wrap:anywhere}
   </style>
 </head>
 <body>
@@ -124,16 +126,23 @@ function renderGemini(d){const panel=document.querySelector('#gemini-exchange');
 document.querySelector('#ai-search-form').onsubmit=async e=>{e.preventDefault();aiSearchStarted=true;const button=document.querySelector('#ai-search-button'),summary=document.querySelector('#ai-search-summary');button.disabled=true;renderGemini(null);summary.textContent='Searching online and matching Telegram titles…';document.querySelector('#ai-results').innerHTML='';try{const q=document.querySelector('#ai-query').value,d=await api('/api/search?'+new URLSearchParams({q,mode:'ai'}));renderGemini(d.gemini);summary.textContent=d.gemini?.reason||`${d.result_count} results · ${d.duration_ms} ms · ${d.channels_queried.length} chats included`;document.querySelector('#ai-results').innerHTML=renderAIGroup('Movies',d.movies)+renderAIGroup('Series',d.series)}catch(err){renderGemini(err.data?.gemini);summary.textContent=err.message}finally{button.disabled=false}};
 let searchRows=[], downloadRows=[], downloadPoll=null;
 const selectedDownloads=new Set(), busyDownloads=new Set();
+function actionIcon(action){
+  const paths={download:'<path d="M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5"/>',pause:'<path d="M8 5v14M16 5v14"/>',resume:'<path d="m8 4 12 8-12 8Z"/>',stop:'<rect x="5" y="5" width="14" height="14" rx="1"/>',delete:'<path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/>',choose:'<path d="m5 12 4 4L19 6"/>',groups:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',review:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>'};
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[action]||paths.download}</svg>`;
+}
+function actionButton(label,icon,attributes=''){
+  return `<button type="button" class="icon-button" title="${esc(label)}" aria-label="${esc(label)}" ${attributes}>${actionIcon(icon)}</button>`;
+}
 function downloadControls(row){
   const job=downloadRows.find(j=>j.source_id===row.id);
-  if(!job)return `<button type="button" data-source="${esc(row.id)}">Download</button>`;
+  if(!job)return actionButton('Download','download',`data-source="${esc(row.id)}"`);
   const status=`${esc(job.status)} · ${fmtBytes(job.downloaded)} / ${fmtBytes(job.size)}`;
   const disabled=busyDownloads.has(job.id)?'disabled':'';
-  const control=job.status==='completed'?'':`<button type="button" data-job="${esc(job.id)}" data-action="${job.status==='downloading'?'pause':'resume'}" ${disabled}>${job.status==='downloading'?'Pause':'Resume'}</button>`;
-  return `<span role="status">${status}</span>${job.error?`<br><span class="bad">${esc(job.error)} · Check storage permissions, space and Telegram access, then resume.</span>`:''}<br>${control}<button type="button" data-job="${esc(job.id)}" data-action="delete" ${disabled}>${job.status==='completed'?'Delete':'Stop & delete'}</button>`;
+  const control=job.status==='completed'?'':actionButton(job.status==='downloading'?'Pause':'Resume',job.status==='downloading'?'pause':'resume',`data-job="${esc(job.id)}" data-action="${job.status==='downloading'?'pause':'resume'}" ${disabled}`);
+  return `<span role="status">${status}</span>${job.error?`<br><span class="bad">${esc(job.error)} · Check storage permissions, space and Telegram access, then resume.</span>`:''}<br>${control}${actionButton(job.status==='completed'?'Delete':'Stop & delete',job.status==='completed'?'delete':'stop',`data-job="${esc(job.id)}" data-action="delete" ${disabled}`)}`;
 }
 function renderSearchResults(){
-  document.querySelector('#results').innerHTML=searchRows.length?`<table><thead><tr><th>Title / file name</th><th>Caption</th><th>Group / channel</th><th>Quality</th><th>Size</th><th>Year</th><th>Details</th><th>Download</th></tr></thead><tbody>${searchRows.map(x=>`<tr><td dir="auto"><strong>${esc(x.title)}</strong><br><span class="muted">${esc(x.filename)}</span></td><td dir="auto" style="white-space:pre-wrap;min-width:180px;overflow-wrap:anywhere">${esc(x.caption)}</td><td dir="auto">${esc(x.channel)}<br><span class="muted">${esc(x.channel_id)}</span></td><td>${esc(x.quality||'—')}</td><td>${fmtBytes(x.size)}</td><td>${x.year||'—'}</td><td><details><summary>Why this matched</summary><p>${esc(x.matched_by)}</p><span class="muted">Message ${esc(x.message_id)} · ${esc(x.id)}</span></details></td><td data-download-source="${esc(x.id)}">${downloadControls(x)}</td></tr>`).join('')}</tbody></table>`:'No results. Check the Chats tab and connection status.';
+  document.querySelector('#results').innerHTML=searchRows.length?`<table><thead><tr><th>Title / file name</th><th>Caption</th><th>Group / channel</th><th>Quality</th><th>Size</th><th>Year</th><th>Details</th><th>Download</th></tr></thead><tbody>${searchRows.map(x=>`<tr><td dir="auto"><strong class="file-name" title="${esc(x.title)}">${esc(x.title)}</strong><span class="muted file-name" title="${esc(x.filename)}">${esc(x.filename)}</span></td><td dir="auto" style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(x.caption)}</td><td dir="auto">${esc(x.channel)}<br><span class="muted">${esc(x.channel_id)}</span></td><td>${esc(x.quality||'—')}</td><td>${fmtBytes(x.size)}</td><td>${x.year||'—'}</td><td><details><summary>Why this matched</summary><p>${esc(x.matched_by)}</p><span class="muted">Message ${esc(x.message_id)} · ${esc(x.id)}</span></details></td><td data-download-source="${esc(x.id)}">${downloadControls(x)}</td></tr>`).join('')}</tbody></table>`:'No results. Check the Chats tab and connection status.';
 }
 function renderDownloads(){
   // Update only the controls, preserving open match details and table scroll.
@@ -142,7 +151,8 @@ function renderDownloads(){
   for(const id of selectedDownloads)if(!ids.has(id))selectedDownloads.delete(id);
   document.querySelector('#delete-downloads').disabled=selectedDownloads.size===0;
   document.querySelector('#delete-downloads').textContent=`Delete selected (${selectedDownloads.size})`;
-  document.querySelector('#saved-downloads').innerHTML=downloadRows.length?`<table><thead><tr><th>Select</th><th>File name</th><th>Caption</th><th>Group / channel</th><th>Size</th><th>Status / actions</th></tr></thead><tbody>${downloadRows.map(j=>`<tr><td><input type="checkbox" aria-label="Select ${esc(j.filename)}" data-select-download="${esc(j.id)}" ${selectedDownloads.has(j.id)?'checked':''}></td><td dir="auto">${esc(j.filename)}<br><small class="muted">Saved as ${esc(j.saved_filename)}</small></td><td dir="auto" style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(j.caption)}</td><td dir="auto">${esc(j.channel)}</td><td>${fmtBytes(j.size)}</td><td>${downloadControls({id:j.source_id})}</td></tr>`).join('')}</tbody></table>`:'No downloaded files yet. Use Search for videos to add a download.';
+  if(resizingTable?.closest('#saved-downloads'))return;
+  document.querySelector('#saved-downloads').innerHTML=downloadRows.length?`<table><thead><tr><th>Select</th><th>File name</th><th>Caption</th><th>Group / channel</th><th>Size</th><th>Status / actions</th></tr></thead><tbody>${downloadRows.map(j=>`<tr><td><input type="checkbox" aria-label="Select ${esc(j.filename)}" data-select-download="${esc(j.id)}" ${selectedDownloads.has(j.id)?'checked':''}></td><td dir="auto"><span class="file-name" title="${esc(j.filename)}">${esc(j.filename)}</span><small class="muted file-name" title="Saved as ${esc(j.saved_filename)}">Saved as ${esc(j.saved_filename)}</small></td><td dir="auto" style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(j.caption)}</td><td dir="auto">${esc(j.channel)}</td><td>${fmtBytes(j.size)}</td><td>${downloadControls({id:j.source_id})}</td></tr>`).join('')}</tbody></table>`:'No downloaded files yet. Use Search for videos to add a download.';
 }
 function downloadNotice(message){for(const id of ['#download-status','#saved-status'])document.querySelector(id).textContent=message}
 async function loadDownloads(){
@@ -176,24 +186,117 @@ document.querySelector('#delete-downloads').onclick=async()=>{
   try{await api('/api/downloads/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})});selectedDownloads.clear();downloadNotice('Selected downloads deleted.')}
   catch(err){downloadNotice(err.message)}finally{await loadDownloads()}
 };
+document.querySelector('#search-summary').addEventListener('click',event=>{
+  const button=event.target.closest('#toggle-group-results');
+  if(!button)return;
+  const expanded=button.getAttribute('aria-expanded')!=='true';
+  button.setAttribute('aria-expanded',String(expanded));
+  const label=expanded?'Hide results by group':'Show results by group';
+  button.setAttribute('aria-label',label);button.title=label;
+  document.querySelector('#group-results').classList.toggle('hidden',!expanded);
+});
 document.querySelector('#search-form').onsubmit=async e=>{
   e.preventDefault();const button=e.submitter,summary=document.querySelector('#search-summary');button.disabled=true;summary.textContent='Searching…';
   try{
     const p=new URLSearchParams({q:document.querySelector('#query').value,mode:document.querySelector('#mode').value,kind:document.querySelector('#kind').value});
-    const d=await api('/api/search?'+p),byChannel=d.channels_queried.map(c=>`${esc(c.name)}: ${d.results_by_channel[c.id]||0}`).join(' · ');
-    summary.innerHTML=`<span class="pill">${d.result_count} results</span><span class="pill">${d.channels_queried.length} chats included</span><span class="pill">${d.duration_ms} ms</span><span class="pill">Normalized: ${esc(d.normalized_query)}</span><span class="pill">${byChannel}</span>`;
+    const d=await api('/api/search?'+p),byChannel=d.channels_queried.map(c=>`<li dir="auto">${esc(c.name)}: ${d.results_by_channel[c.id]||0}</li>`).join('');
+    summary.innerHTML=`<span class="pill">${d.result_count} results</span><span class="pill">${d.channels_queried.length} chats included</span><span class="pill">${d.duration_ms} ms</span><span class="pill">Normalized: ${esc(d.normalized_query)}</span>${actionButton('Show results by group','groups','id="toggle-group-results" aria-expanded="false" aria-controls="group-results"')}<div id="group-results" class="hidden group-results"><ul>${byChannel}</ul></div>`;
     searchRows=d.results;await loadDownloads();renderSearchResults();
   }catch(err){summary.textContent=err.message}finally{button.disabled=false}
 };
 
 let tmdbShows=[], tmdbSelected=null;
 const tmdbStatus=text=>{document.querySelector('#tmdb-status').textContent=text};
-function renderTMDBCandidates(rows){document.querySelector('#tmdb-candidates').innerHTML=rows.length?`<table><thead><tr><th>TMDB show</th><th>Year</th><th>ID</th><th>Match</th><th></th></tr></thead><tbody>${rows.map(c=>`<tr><td dir="auto">${esc(c.name)}</td><td>${esc(c.year)}</td><td>${esc(c.tmdb)}</td><td>${c.exact?'Exact title':'Review title'}</td><td><button type="button" data-tmdb-id="${esc(c.tmdb)}">Choose</button></td></tr>`).join('')}</tbody></table>`:'<p>No candidates. Try a different title or enter the TMDB TV show ID.</p>';document.querySelectorAll('[data-tmdb-id]').forEach(b=>b.onclick=()=>{document.querySelector('#tmdb-id').value=b.dataset.tmdbId;tmdbStatus('Candidate selected. Save mapping to apply it.')})}
-async function loadTMDB(throwOnError=false){try{const d=await api('/api/tmdb/shows');tmdbShows=d.shows;tmdbStatus(d.enabled?'Background matching enabled. Refresh to see progress.':'Set TMDB_API_KEY in configuration to enable matching.');document.querySelector('#tmdb-shows').innerHTML=d.shows.length?`<table><thead><tr><th>Telegram show</th><th>Files</th><th>Status</th><th>TMDB identity</th><th></th></tr></thead><tbody>${d.shows.map((x,i)=>`<tr><td dir="auto">${esc(x.title)}</td><td>${x.episodes}</td><td>${esc(x.mapping?.status||'pending')}</td><td dir="auto">${esc(x.mapping?.name||'—')} ${esc(x.mapping?.tmdb||'')}</td><td><button type="button" data-tmdb-show="${i}">Review</button></td></tr>`).join('')}</tbody></table>`:'<p>No indexed shows.</p>';document.querySelectorAll('[data-tmdb-show]').forEach(b=>b.onclick=()=>{tmdbSelected=tmdbShows[Number(b.dataset.tmdbShow)];document.querySelector('#tmdb-editor').classList.remove('hidden');document.querySelector('#tmdb-title').textContent=tmdbSelected.title;document.querySelector('#tmdb-query').value=tmdbSelected.title;document.querySelector('#tmdb-id').value=tmdbSelected.mapping?.tmdb||'';document.querySelector('#tmdb-season').value=tmdbSelected.mapping?.season_offset||0;document.querySelector('#tmdb-episode').value=tmdbSelected.mapping?.episode_offset||0;renderTMDBCandidates(tmdbSelected.mapping?.candidates||[])})}catch(err){tmdbStatus(err.message);if(throwOnError===true)throw err}}
+function renderTMDBCandidates(rows){document.querySelector('#tmdb-candidates').innerHTML=rows.length?`<table><thead><tr><th>TMDB show</th><th>Year</th><th>ID</th><th>Match</th><th></th></tr></thead><tbody>${rows.map(c=>`<tr><td dir="auto">${esc(c.name)}</td><td>${esc(c.year)}</td><td>${esc(c.tmdb)}</td><td>${c.exact?'Exact title':'Review title'}</td><td>${actionButton('Choose','choose',`data-tmdb-id="${esc(c.tmdb)}"`)}</td></tr>`).join('')}</tbody></table>`:'<p>No candidates. Try a different title or enter the TMDB TV show ID.</p>';document.querySelectorAll('[data-tmdb-id]').forEach(b=>b.onclick=()=>{document.querySelector('#tmdb-id').value=b.dataset.tmdbId;tmdbStatus('Candidate selected. Save mapping to apply it.')})}
+async function loadTMDB(throwOnError=false){try{const d=await api('/api/tmdb/shows');tmdbShows=d.shows;tmdbStatus(d.enabled?'Background matching enabled. Refresh to see progress.':'Set TMDB_API_KEY in configuration to enable matching.');document.querySelector('#tmdb-shows').innerHTML=d.shows.length?`<table><thead><tr><th>Telegram show</th><th>Files</th><th>Status</th><th>TMDB identity</th><th></th></tr></thead><tbody>${d.shows.map((x,i)=>`<tr><td dir="auto">${esc(x.title)}</td><td>${x.episodes}</td><td>${esc(x.mapping?.status||'pending')}</td><td dir="auto">${esc(x.mapping?.name||'—')} ${esc(x.mapping?.tmdb||'')}</td><td>${actionButton('Review','review',`data-tmdb-show="${i}"`)}</td></tr>`).join('')}</tbody></table>`:'<p>No indexed shows.</p>';document.querySelectorAll('[data-tmdb-show]').forEach(b=>b.onclick=()=>{tmdbSelected=tmdbShows[Number(b.dataset.tmdbShow)];document.querySelector('#tmdb-editor').classList.remove('hidden');document.querySelector('#tmdb-title').textContent=tmdbSelected.title;document.querySelector('#tmdb-query').value=tmdbSelected.title;document.querySelector('#tmdb-id').value=tmdbSelected.mapping?.tmdb||'';document.querySelector('#tmdb-season').value=tmdbSelected.mapping?.season_offset||0;document.querySelector('#tmdb-episode').value=tmdbSelected.mapping?.episode_offset||0;renderTMDBCandidates(tmdbSelected.mapping?.candidates||[])})}catch(err){tmdbStatus(err.message);if(throwOnError===true)throw err}}
 document.querySelector('#tmdb-refresh').onclick=loadTMDB;
 document.querySelector('#tmdb-search').onsubmit=async e=>{e.preventDefault();if(!tmdbSelected)return;const button=e.submitter;button.disabled=true;tmdbStatus('Searching TMDB…');try{const d=await api('/api/tmdb/candidates?'+new URLSearchParams({series_id:tmdbSelected.series_id,q:document.querySelector('#tmdb-query').value}));renderTMDBCandidates(d.candidates);tmdbStatus('Review candidates and save the correct match.')}catch(err){tmdbStatus(err.message)}finally{button.disabled=false}};
 document.querySelector('#tmdb-save').onsubmit=async e=>{e.preventDefault();if(!tmdbSelected)return;const button=e.submitter;button.disabled=true;try{await api('/api/tmdb/mapping',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({series_id:tmdbSelected.series_id,tmdb:Number(document.querySelector('#tmdb-id').value),season_offset:Number(document.querySelector('#tmdb-season').value),episode_offset:Number(document.querySelector('#tmdb-episode').value)})});await loadTMDB();tmdbStatus('Mapping saved for all episodes of this show.')}catch(err){tmdbStatus(err.message)}finally{button.disabled=false}};
 document.querySelector('#tmdb-block').onclick=async()=>{if(!tmdbSelected)return;try{await api('/api/tmdb/mapping?'+new URLSearchParams({series_id:tmdbSelected.series_id}),{method:'DELETE'});await loadTMDB();tmdbStatus('Matching disabled for this show. Save a mapping to enable it again.')}catch(err){tmdbStatus(err.message)}};
+// All current and future tables share one column-resizing behavior.
+const tableWidths=new Map(), enhancedTables=new WeakSet();
+let resizingTable=null, tableLayoutFrame=null;
+const minimumColumnWidth=48;
+function applyColumnWidths(table,cols,widths){
+  cols.forEach((col,i)=>{col.style.width=widths[i]+'px'});
+  table.style.width=widths.reduce((total,width,i)=>total+(getComputedStyle(cols[i]).display==='none'?0:width),0)+'px';
+}
+function rememberTableWidths(key,widths){
+  tableWidths.set(key,[...widths]);
+  try{localStorage.setItem('dev-ui-columns:'+key,JSON.stringify(widths))}catch{}
+}
+function enhanceTables(){
+  if(resizingTable)return;
+  document.querySelectorAll('table').forEach(table=>{
+    if(enhancedTables.has(table)||!table.getClientRects().length)return;
+    const headers=[...(table.tHead?.rows[0]?.cells||[])];
+    if(!headers.length)return;
+    const container=table.parentElement.closest('[id]');
+    const containerId=container?.id||'tables';
+    const index=container?[...container.querySelectorAll('table')].indexOf(table):0;
+    const key=containerId+':'+index+':'+headers.map(th=>th.textContent.trim()).join('|');
+    const defaults=containerId==='results'?[180,250,150,80,90,65,150,170]:containerId==='saved-downloads'?[60,180,250,150,90,180]:null;
+    let saved=tableWidths.get(key);
+    if(!saved){try{saved=JSON.parse(localStorage.getItem('dev-ui-columns:'+key))}catch{}}
+    const valid=Array.isArray(saved)&&saved.length===headers.length&&saved.every(w=>Number.isFinite(w)&&w>=minimumColumnWidth&&w<=10000);
+    const widths=valid?[...saved]:headers.map((th,i)=>defaults?.[i]||Math.max(minimumColumnWidth,Math.round(th.getBoundingClientRect().width)||120));
+    const group=document.createElement('colgroup');
+    const cols=headers.map(()=>{const col=document.createElement('col');group.append(col);return col});
+    table.insertBefore(group,table.tHead);table.classList.add('resizable-table');
+    applyColumnWidths(table,cols,widths);
+    headers.forEach((header,i)=>{
+      const handle=document.createElement('span');
+      handle.className='column-resizer';handle.tabIndex=0;
+      handle.setAttribute('role','separator');handle.setAttribute('aria-orientation','vertical');
+      handle.setAttribute('aria-label','Resize '+(header.textContent.trim()||'Actions')+' column');
+      handle.title='Drag to resize; use arrow keys when focused';
+      handle.setAttribute('aria-valuemin',String(minimumColumnWidth));
+      handle.setAttribute('aria-valuemax','10000');
+      const resize=width=>{
+        widths[i]=Math.max(minimumColumnWidth,Math.min(10000,Math.round(width)));
+        applyColumnWidths(table,cols,widths);handle.setAttribute('aria-valuenow',String(widths[i]));
+      };
+      handle.setAttribute('aria-valuenow',String(widths[i]));
+      handle.addEventListener('pointerdown',event=>{
+        if(event.button!==0||resizingTable)return;
+        event.preventDefault();event.stopPropagation();
+        resizingTable=table;
+        const startX=event.clientX,startWidth=widths[i];
+        handle.setPointerCapture(event.pointerId);document.body.classList.add('resizing-columns');
+        const move=e=>{if(e.pointerId===event.pointerId)resize(startWidth+e.clientX-startX)};
+        const finish=e=>{
+          if(e.pointerId!==event.pointerId)return;
+          document.removeEventListener('pointermove',move);
+          for(const type of ['pointerup','pointercancel','lostpointercapture'])document.removeEventListener(type,finish);
+          if(handle.hasPointerCapture(event.pointerId))handle.releasePointerCapture(event.pointerId);
+          document.body.classList.remove('resizing-columns');resizingTable=null;
+          rememberTableWidths(key,widths);scheduleTables();
+        };
+        document.addEventListener('pointermove',move);
+        for(const type of ['pointerup','pointercancel','lostpointercapture'])document.addEventListener(type,finish);
+      });
+      handle.addEventListener('keydown',event=>{
+        if(!['ArrowLeft','ArrowRight'].includes(event.key))return;
+        event.preventDefault();resize(widths[i]+(event.key==='ArrowRight'?1:-1)*(event.shiftKey?40:10));rememberTableWidths(key,widths);
+      });
+      header.append(handle);
+    });
+    enhancedTables.add(table);
+  });
+}
+function scheduleTables(){
+  if(tableLayoutFrame!==null)return;
+  tableLayoutFrame=requestAnimationFrame(()=>{tableLayoutFrame=null;enhanceTables()});
+}
+new MutationObserver(scheduleTables).observe(document.querySelector('#app'),{childList:true,subtree:true,attributes:true,attributeFilter:['class']});
+window.addEventListener('resize',()=>{
+  document.querySelectorAll('table.resizable-table').forEach(table=>{
+    const cols=[...table.querySelectorAll('col')];
+    applyColumnWidths(table,cols,cols.map(col=>parseFloat(col.style.width)));
+  });
+  scheduleTables();
+});
+scheduleTables();
 async function start(){
   const errorPanel=document.querySelector('#load-error');
   errorPanel.classList.add('hidden');
