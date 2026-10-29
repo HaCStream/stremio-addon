@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from telethon import errors
 
-from stremio_addon.downloads import Downloads, disk
+from stremio_addon.downloads import Downloads, InsufficientSpace, disk
 from stremio_addon.telegram import CHUNK
 from stremio_addon.debug import create_debug_app
 from stremio_addon.core import Settings
@@ -176,14 +176,20 @@ async def test_flood_wait_and_expired_reference_retry_without_skipping_bytes(tmp
 @pytest.mark.asyncio
 async def test_no_space_and_symlink_fail_without_overwriting_other_files(tmp_path, monkeypatch):
     m = manager(tmp_path, b'video')
-    monkeypatch.setattr('stremio_addon.downloads.shutil.disk_usage', lambda _: SimpleNamespace(free=0))
+    free = 5
+    monkeypatch.setattr('stremio_addon.downloads.shutil.disk_usage', lambda _: SimpleNamespace(free=free))
+    m.runtime.tg.gates[0] = asyncio.Event()
     identifier = await m.create(row(size=5))
+    await m.runtime.tg.started.get()
+    free = 0
+    m.runtime.tg.gates[0].set()
     assert (await finished(m, identifier))['error'] == 'OSError'
     final, part = m.paths(m.jobs[identifier])
     target = tmp_path / 'unrelated'
     target.write_bytes(b'keep')
     part.unlink()
     part.symlink_to(target)
+    free = 5
     await m.action(identifier, 'resume')
     assert (await finished(m, identifier))['status'] == 'failed'
     assert target.read_bytes() == b'keep'
@@ -309,3 +315,72 @@ async def test_manifest_cannot_point_outside_download_directory(tmp_path):
                                         status='paused', error=None)]))
     with pytest.raises(ValueError, match='Invalid saved download filename'):
         await m.start()
+
+
+@pytest.mark.asyncio
+async def test_space_preflight_rejects_without_creating_job_or_request(tmp_path, monkeypatch):
+    m = manager(tmp_path, b'video')
+    monkeypatch.setattr('stremio_addon.downloads.shutil.disk_usage', lambda _: SimpleNamespace(free=4))
+    with pytest.raises(InsufficientSpace) as failure:
+        await m.create(row(size=5))
+    assert (failure.value.required, failure.value.available) == (5, 4)
+    assert not m.jobs and not m.tasks and not m.runtime.tg.requests
+    assert not list(m.root.iterdir())
+    await m.close()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_starts_reserve_space_and_pause_releases_reservation(tmp_path, monkeypatch):
+    m = manager(tmp_path, b'video')
+    m.runtime.tg.playback.clear()
+    monkeypatch.setattr('stremio_addon.downloads.shutil.disk_usage', lambda _: SimpleNamespace(free=9))
+    first = await m.create(row(id='a', size=5))
+    with pytest.raises(InsufficientSpace):
+        await m.create(row(id='b', size=5))
+    assert len(m.jobs) == 1
+    await m.action(first, 'pause')
+    second = await m.create(row(id='b', size=5))
+    assert m.jobs[second]['status'] == 'downloading'
+    with pytest.raises(InsufficientSpace):
+        await m.action(first, 'resume')
+    assert m.jobs[first]['status'] == 'paused'
+    await m.close()
+
+
+@pytest.mark.asyncio
+async def test_resume_preflight_checks_remaining_bytes(tmp_path, monkeypatch):
+    content = b'a' * CHUNK + b'hello'
+    m = manager(tmp_path, content)
+    m.runtime.tg.gates[CHUNK] = asyncio.Event()
+    identifier = await m.create(row(size=len(content)))
+    await m.runtime.tg.started.get()
+    await m.runtime.tg.started.get()
+    await m.action(identifier, 'pause')
+    free = 4
+    monkeypatch.setattr('stremio_addon.downloads.shutil.disk_usage', lambda _: SimpleNamespace(free=free))
+    with pytest.raises(InsufficientSpace) as failure:
+        await m.action(identifier, 'resume')
+    assert failure.value.required == 5
+    assert m.jobs[identifier]['status'] == 'paused'
+    free = 5
+    m.runtime.tg.gates[CHUNK].set()
+    await m.action(identifier, 'resume')
+    assert (await finished(m, identifier))['status'] == 'completed'
+    await m.close()
+
+
+def test_download_space_error_api_is_structured_and_does_not_start(tmp_path, monkeypatch):
+    cfg = Settings(8000, 'https://example.com', 'a' * 32, 1, 'hash', 'session', tmp_path)
+    app = create_debug_app(Runtime(cfg, FakeTelegram))
+    with TestClient(app) as client:
+        app.state.runtime.downloads.root = tmp_path / 'media'
+        monkeypatch.setattr('stremio_addon.downloads.shutil.disk_usage', lambda _: SimpleNamespace(free=0))
+        headers = {'X-Debug-Key': cfg.key}
+        response = client.post('/api/downloads', json={'source_id': row()['id']}, headers=headers)
+        assert response.status_code == 409
+        detail = response.json()['detail']
+        assert detail['code'] == 'insufficient_space'
+        assert detail['required_bytes'] == row()['size']
+        assert detail['available_bytes'] == 0
+        assert client.get('/api/downloads', headers=headers).json() == {'downloads': []}
+        assert not app.state.runtime.downloads.tasks

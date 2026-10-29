@@ -12,6 +12,7 @@
     table.resizable-table{table-layout:fixed}table.resizable-table th{position:relative;padding-right:18px}table.resizable-table th,table.resizable-table td{overflow-wrap:anywhere;min-width:0}.column-resizer{position:absolute;right:0;top:0;bottom:0;width:12px;cursor:col-resize;touch-action:none;border-right:2px solid var(--line)}.column-resizer:hover,.column-resizer:focus-visible{border-color:var(--blue);background:#64b5f626;outline:2px solid var(--blue);outline-offset:-2px}body.resizing-columns,body.resizing-columns *{cursor:col-resize!important;user-select:none!important}.file-name{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}.icon-button{display:inline-grid;place-items:center;width:36px;height:36px;padding:7px;margin:3px 3px 0 0}.icon-button svg{width:19px;height:19px;pointer-events:none}@media(max-width:700px){#channels col:nth-child(2){display:none}}
     .group-results{flex-basis:100%;border:1px solid var(--line);border-radius:8px;padding:8px 14px}.group-results ul{list-style:none;padding:0;margin:0}.group-results li{padding:5px 0;overflow-wrap:anywhere}
     .result-toolbar,.group-filter,.picker-actions,.picker-heading{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.result-toolbar{margin-bottom:10px}.group-filter{margin:16px 0}.size-filter{display:grid;gap:8px;max-width:520px}.size-filter input{width:100%;padding:0;accent-color:var(--blue)}.sort-button{padding:3px;margin-top:4px;font-size:10px;max-width:100%;white-space:normal}.sort-button[aria-pressed="true"]{color:var(--blue)}#search-filters{margin-bottom:14px}#group-picker{color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:12px;width:min(520px,calc(100vw - 28px));max-height:85vh;padding:18px}#group-picker::backdrop{background:#0009}.picker-heading{justify-content:space-between}.picker-heading h2{font-size:19px}#group-picker-search{width:100%;margin-bottom:12px}.picker-items{max-height:40vh;overflow-y:auto;margin:12px 0}.picker-item{display:flex;align-items:center;gap:10px;padding:10px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.picker-item span{min-width:0}.picker-item input{flex-shrink:0}
+    .deleting-icon svg{animation:refresh-spin .8s linear infinite}.feedback-dialog{color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:12px;max-width:min(440px,calc(100vw - 28px))}.feedback-dialog::backdrop{background:#0009}
   </style>
 </head>
 <body>
@@ -37,7 +38,7 @@
       <button id="tmdb-block" type="button">Disable matching for this show</button>
     </div><p class="muted">This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
   </div></section>
-</main></div>
+<dialog id="download-space-error" class="feedback-dialog" aria-labelledby="download-space-title"><h2 id="download-space-title">Not enough free space</h2><p id="download-space-message"></p><button id="close-download-space-error" type="button">Close</button></dialog></main></div>
 <script>
 // Storage can be unavailable in embedded browsers; it must not block startup.
 function storedKey(value){try{if(value===undefined)return sessionStorage.getItem('debugKey')||'';if(value)sessionStorage.setItem('debugKey',value);else sessionStorage.removeItem('debugKey')}catch{}return ''}
@@ -56,7 +57,7 @@ async function api(path,options={}){
     throw new Error(`${message} (HTTP ${r.status}, ${path.split('?')[0]})`);
   }
   if(!r.ok){
-    const error=new Error(`${typeof data?.detail==='string'?data.detail:'Request failed'} (HTTP ${r.status}, ${path.split('?')[0]})`);
+    const error=new Error(`${typeof data?.detail==='string'?data.detail:typeof data?.detail?.message==='string'?data.detail.message:'Request failed'} (HTTP ${r.status}, ${path.split('?')[0]})`);
     error.data=data;
     throw error;
   }
@@ -127,19 +128,21 @@ function renderGemini(d){const panel=document.querySelector('#gemini-exchange');
 document.querySelector('#ai-search-form').onsubmit=async e=>{e.preventDefault();aiSearchStarted=true;const button=document.querySelector('#ai-search-button'),summary=document.querySelector('#ai-search-summary');button.disabled=true;renderGemini(null);summary.textContent='Searching online and matching Telegram titles…';document.querySelector('#ai-results').innerHTML='';try{const q=document.querySelector('#ai-query').value,d=await api('/api/search?'+new URLSearchParams({q,mode:'ai'}));renderGemini(d.gemini);summary.textContent=d.gemini?.reason||`${d.result_count} results · ${d.duration_ms} ms · ${d.channels_queried.length} chats included`;document.querySelector('#ai-results').innerHTML=renderAIGroup('Movies',d.movies)+renderAIGroup('Series',d.series)}catch(err){renderGemini(err.data?.gemini);summary.textContent=err.message}finally{button.disabled=false}};
 let searchRows=[], downloadRows=[], downloadPoll=null;
 let searchSort={key:null,direction:1},searchSize={min:0,max:0},searchGroups=[],selectedSearchGroups=new Set(),draftSearchGroups=new Set();
-const selectedDownloads=new Set(), busyDownloads=new Set();
+const selectedDownloads=new Set(), busyDownloads=new Set(), pendingDeletions=new Map(), deletedDownloads=new Set();
+let downloadRevision=0;
 function actionIcon(action){
-  const paths={download:'<path d="M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5"/>',pause:'<path d="M8 5v14M16 5v14"/>',resume:'<path d="m8 4 12 8-12 8Z"/>',stop:'<rect x="5" y="5" width="14" height="14" rx="1"/>',delete:'<path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/>',choose:'<path d="m5 12 4 4L19 6"/>',groups:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',review:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>'};
+  const paths={spinner:'<path d="M12 3a9 9 0 1 1-9 9"/>',download:'<path d="M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5"/>',pause:'<path d="M8 5v14M16 5v14"/>',resume:'<path d="m8 4 12 8-12 8Z"/>',stop:'<rect x="5" y="5" width="14" height="14" rx="1"/>',delete:'<path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/>',choose:'<path d="m5 12 4 4L19 6"/>',groups:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',review:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>'};
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[action]||paths.download}</svg>`;
 }
 function actionButton(label,icon,attributes=''){
-  return `<button type="button" class="icon-button" title="${esc(label)}" aria-label="${esc(label)}" ${attributes}>${actionIcon(icon)}</button>`;
+  return `<button type="button" class="icon-button${icon==='spinner'?' deleting-icon':''}" title="${esc(label)}" aria-label="${esc(label)}" ${attributes}>${actionIcon(icon)}</button>`;
 }
 function downloadControls(row){
   const job=downloadRows.find(j=>j.source_id===row.id);
   if(!job)return actionButton('Download','download',`data-source="${esc(row.id)}"`);
   const status=`${esc(job.status)} · ${fmtBytes(job.downloaded)} / ${fmtBytes(job.size)}`;
   const disabled=busyDownloads.has(job.id)?'disabled':'';
+  if(pendingDeletions.has(job.id))return `<span role="status">Deleting…</span><br>${actionButton('Deleting video','spinner',`data-job="${esc(job.id)}" data-action="delete" disabled aria-busy="true"`)}`;
   const control=job.status==='completed'?'':actionButton(job.status==='downloading'?'Pause':'Resume',job.status==='downloading'?'pause':'resume',`data-job="${esc(job.id)}" data-action="${job.status==='downloading'?'pause':'resume'}" ${disabled}`);
   return `<span role="status">${status}</span>${job.error?`<br><span class="bad">${esc(job.error)} · Check storage permissions, space and Telegram access, then resume.</span>`:''}<br>${control}${actionButton(job.status==='completed'?'Delete':'Stop & delete',job.status==='completed'?'delete':'stop',`data-job="${esc(job.id)}" data-action="delete" ${disabled}`)}`;
 }
@@ -224,42 +227,76 @@ function renderDownloads(){
   document.querySelectorAll('[data-download-source]').forEach(cell=>{cell.innerHTML=downloadControls({id:cell.dataset.downloadSource})});
   const ids=new Set(downloadRows.map(j=>j.id));
   for(const id of selectedDownloads)if(!ids.has(id))selectedDownloads.delete(id);
-  document.querySelector('#delete-downloads').disabled=selectedDownloads.size===0;
+  document.querySelector('#delete-downloads').disabled=selectedDownloads.size===0||pendingDeletions.size>0;
   document.querySelector('#delete-downloads').textContent=`Delete selected (${selectedDownloads.size})`;
   if(resizingTable?.closest('#saved-downloads'))return;
   document.querySelector('#saved-downloads').innerHTML=downloadRows.length?`<table><thead><tr><th>Select</th><th>File name</th><th>Caption</th><th>Group / channel</th><th>Size</th><th>Status / actions</th></tr></thead><tbody>${downloadRows.map(j=>`<tr><td><input type="checkbox" aria-label="Select ${esc(j.filename)}" data-select-download="${esc(j.id)}" ${selectedDownloads.has(j.id)?'checked':''}></td><td dir="auto"><span class="file-name" title="${esc(j.filename)}">${esc(j.filename)}</span><small class="muted file-name" title="Saved as ${esc(j.saved_filename)}">Saved as ${esc(j.saved_filename)}</small></td><td dir="auto" style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(j.caption)}</td><td dir="auto">${esc(j.channel)}</td><td>${fmtBytes(j.size)}</td><td>${downloadControls({id:j.source_id})}</td></tr>`).join('')}</tbody></table>`:'No downloaded files yet. Use Search for videos to add a download.';
 }
 function downloadNotice(message){for(const id of ['#download-status','#saved-status'])document.querySelector(id).textContent=message}
+function acceptDownloads(rows){
+  const items=new Map(rows.filter(job=>!deletedDownloads.has(job.id)).map(job=>[job.id,job]));
+  for(const [id,job] of pendingDeletions)if(!items.has(id))items.set(id,job);
+  downloadRows=[...items.values()];renderDownloads();
+}
+function beginDelete(ids){
+  downloadRevision++;
+  for(const id of ids){
+    const job=downloadRows.find(row=>row.id===id);
+    if(job){pendingDeletions.set(id,job);busyDownloads.add(id)}
+  }
+  renderDownloads();
+}
+function finishDelete(ids,success){
+  downloadRevision++;
+  for(const id of ids){pendingDeletions.delete(id);busyDownloads.delete(id);if(success)deletedDownloads.add(id)}
+}
+function showDownloadError(error){
+  downloadNotice(error.message);
+  const detail=error.data?.detail;
+  if(detail?.code==='insufficient_space'){
+    document.querySelector('#download-space-message').textContent=`${detail.message}. Required: ${fmtBytes(detail.required_bytes)}. Available after active downloads: ${fmtBytes(detail.available_bytes)}.`;
+    const dialog=document.querySelector('#download-space-error');if(!dialog.open)dialog.showModal();
+  }
+}
+document.querySelector('#close-download-space-error').onclick=()=>document.querySelector('#download-space-error').close();
 async function loadDownloads(){
   clearTimeout(downloadPoll);
-  try{downloadRows=(await api('/api/downloads')).downloads;renderDownloads()}
+  const revision=downloadRevision;
+  try{const rows=(await api('/api/downloads')).downloads;if(revision===downloadRevision)acceptDownloads(rows)}
   catch(err){downloadNotice(err.message)}
   finally{clearTimeout(downloadPoll);if(!document.querySelector('#app').classList.contains('hidden'))downloadPoll=setTimeout(loadDownloads,2000)}
 }
 async function handleDownloadClick(e){
   const button=e.target.closest('button[data-source],button[data-job]');
   if(!button||button.disabled)return;
+  const id=button.dataset.job,deleting=button.dataset.action==='delete';
   button.disabled=true;
-  if(button.dataset.job)busyDownloads.add(button.dataset.job);
+  if(deleting)beginDelete([id]);else if(id)busyDownloads.add(id);
   try{
     if(button.dataset.source)await api('/api/downloads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source_id:button.dataset.source})});
-    else await api(`/api/downloads/${encodeURIComponent(button.dataset.job)}/${button.dataset.action}`,{method:'POST'});
+    else{
+      const response=await api(`/api/downloads/${encodeURIComponent(id)}/${button.dataset.action}`,{method:'POST'});
+      if(deleting)finishDelete([id],true);
+      downloadRevision++;acceptDownloads(response.downloads);
+    }
     downloadNotice('');
-  }catch(err){downloadNotice(err.message)}
-  finally{busyDownloads.delete(button.dataset.job);button.disabled=false;await loadDownloads()}
+  }catch(err){if(deleting)finishDelete([id],false);showDownloadError(err)}
+  finally{busyDownloads.delete(id);button.disabled=false;renderDownloads();await loadDownloads()}
 }
 document.querySelector('#results').addEventListener('click',handleDownloadClick);
 document.querySelector('#saved-downloads').addEventListener('click',handleDownloadClick);
-document.querySelector('#saved-downloads').addEventListener('change',e=>{const id=e.target.dataset.selectDownload;if(!id)return;if(e.target.checked)selectedDownloads.add(id);else selectedDownloads.delete(id);document.querySelector('#delete-downloads').disabled=selectedDownloads.size===0;document.querySelector('#delete-downloads').textContent=`Delete selected (${selectedDownloads.size})`});
+document.querySelector('#saved-downloads').addEventListener('change',e=>{const id=e.target.dataset.selectDownload;if(!id)return;if(e.target.checked)selectedDownloads.add(id);else selectedDownloads.delete(id);document.querySelector('#delete-downloads').disabled=selectedDownloads.size===0||pendingDeletions.size>0;document.querySelector('#delete-downloads').textContent=`Delete selected (${selectedDownloads.size})`});
 document.querySelector('#find-downloads').onclick=()=>document.querySelector('[data-view="search"]').click();
 document.querySelector('#select-downloads').onclick=()=>{downloadRows.forEach(j=>selectedDownloads.add(j.id));renderDownloads()};
 document.querySelector('#clear-downloads').onclick=()=>{selectedDownloads.clear();renderDownloads()};
 document.querySelector('#delete-downloads').onclick=async()=>{
   const ids=[...selectedDownloads];
-  if(!ids.length||!confirm(`Stop and permanently delete ${ids.length} selected download(s), including partial files?`))return;
-  const button=document.querySelector('#delete-downloads');button.disabled=true;
-  try{await api('/api/downloads/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})});selectedDownloads.clear();downloadNotice('Selected downloads deleted.')}
-  catch(err){downloadNotice(err.message)}finally{await loadDownloads()}
+  if(pendingDeletions.size||!ids.length||!confirm(`Stop and permanently delete ${ids.length} selected download(s), including partial files?`))return;
+  beginDelete(ids);
+  try{
+    const response=await api('/api/downloads/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})});
+    finishDelete(ids,true);selectedDownloads.clear();acceptDownloads(response.downloads);downloadNotice('Selected downloads deleted.');
+  }catch(err){finishDelete(ids,false);showDownloadError(err)}finally{renderDownloads();await loadDownloads()}
 };
 document.querySelector('#search-summary').addEventListener('click',event=>{
   const button=event.target.closest('#toggle-group-results');

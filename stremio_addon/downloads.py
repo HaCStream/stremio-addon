@@ -45,6 +45,13 @@ def rename_download(source, destination):
         raise OSError(number, os.strerror(number))
 
 
+class InsufficientSpace(ValueError):
+    def __init__(self, required, available):
+        super().__init__('Not enough free space to download this video')
+        self.required = required
+        self.available = available
+
+
 class Downloads:
     def __init__(self, runtime, root=Path('/media/telegram-downloads')):
         self.runtime = runtime
@@ -112,12 +119,32 @@ class Downloads:
             candidate = f'{Path(base).stem} ({number}){Path(base).suffix}'
         return candidate
 
+    async def check_space(self, size, identifier=None):
+        # Called under the job lock: simultaneous starts reserve their remaining
+        # bytes before another job is admitted. Paused jobs reserve no space.
+        def remaining(job):
+            part = self.paths(job)[1]
+            downloaded = part.stat().st_size if part.is_file() else 0
+            aligned = downloaded if downloaded == job['row']['size'] else downloaded // CHUNK * CHUNK
+            return max(0, job['row']['size'] - aligned)
+
+        def available():
+            reserved = sum(remaining(job) for job in self.jobs.values()
+                           if job['id'] != identifier and job['status'] == 'downloading')
+            required = remaining(self.jobs[identifier]) if identifier else size
+            free = max(0, shutil.disk_usage(self.root).free - reserved)
+            return required, free
+        required, free = await disk(available)
+        if required > free:
+            raise InsufficientSpace(required, free)
+
     async def create(self, row):
         async with self.lock:
             existing = next((j for j in self.jobs.values() if j['row']['id'] == row['id']), None)
             if existing:
                 return existing['id']
             await disk(self.root.mkdir, 0o755, True, True)
+            await self.check_space(row['size'])
             identifier = uuid4().hex
             name = await disk(self.available_name, row['filename'])
             job = dict(id=identifier, name=name,
@@ -138,6 +165,8 @@ class Downloads:
             if action == 'resume':
                 if job['status'] == 'completed' or task and not task.done():
                     return
+                await disk(self.root.mkdir, 0o755, True, True)
+                await self.check_space(job['row']['size'], identifier)
                 job.update(status='downloading', error=None)
                 await self.save()
                 self.tasks[identifier] = asyncio.create_task(self.run(job))

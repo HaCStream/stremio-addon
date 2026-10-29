@@ -487,8 +487,10 @@ Downloads have **no application-imposed concurrency limit**. Telegram flood wait
 pause new download requests for the requested delay. Downloads yield between chunks
 to playback (including its two-second grace period), but in-flight requests and
 shared bandwidth/disk I/O may still slow streaming. Continuous playback can delay
-completion. Free space is checked before each chunk; storage errors mark the job
-failed so it can be resumed after fixing the problem.
+completion. Before starting or resuming, available space is checked against the remaining
+file size and other active downloads. Insufficient space opens a popup and the
+download does not start. Free space is also checked before each chunk; storage
+errors mark the job failed so it can be resumed after fixing the problem.
 
 Partial files use `.part` and are renamed only after all bytes arrive. Job state
 is kept in the existing data volume; keep both that volume and the media mount

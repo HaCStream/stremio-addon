@@ -113,3 +113,7 @@ state. Only downloads created by this feature are managed by this screen.
 
 New downloads use the original filename; duplicate names receive a numeric suffix
 (such as `video (1).mp4`). Existing downloads keep their saved names.
+
+Before starting or resuming a download, available media space is checked, allowing
+for other active downloads. If there is not enough, a popup explains the shortage
+and the download does not start. Deleting shows a spinner until deletion finishes.
