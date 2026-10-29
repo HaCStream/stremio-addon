@@ -238,6 +238,53 @@ def create_debug_app(runtime):
         authorize(x_debug_key)
         return {'sync': dict(app.state.runtime.tg.sync_status)}
 
+    class DownloadRequest(BaseModel):
+        source_id: str = Field(min_length=1, max_length=200)
+
+    class DownloadSelection(BaseModel):
+        ids: list[str] = Field(min_length=1, max_length=10000)
+
+    @app.get('/api/downloads')
+    async def downloads(x_debug_key: str | None = Header(None)):
+        authorize(x_debug_key)
+        return {'downloads': app.state.runtime.downloads.listing()}
+
+    @app.post('/api/downloads', status_code=202)
+    async def download_create(body: DownloadRequest, x_debug_key: str | None = Header(None)):
+        authorize(x_debug_key)
+        shared = app.state.runtime
+        row = await shared.store.run(shared.store.get, body.source_id)
+        if not row or row['channel'] not in shared.tg.channels:
+            raise HTTPException(404, 'Video is not available in the configured chats')
+        try:
+            identifier = await shared.downloads.create(row)
+        except OSError:
+            raise HTTPException(409, 'Download storage is not writable; check the media mount and permissions') from None
+        return {'id': identifier}
+
+    @app.post('/api/downloads/delete')
+    async def download_delete(body: DownloadSelection, x_debug_key: str | None = Header(None)):
+        authorize(x_debug_key)
+        manager = app.state.runtime.downloads
+        for identifier in dict.fromkeys(body.ids):
+            try:
+                await manager.action(identifier, 'delete')
+            except KeyError:
+                pass  # Deletion is idempotent, including another tab's selection.
+        return {'downloads': manager.listing()}
+
+    @app.post('/api/downloads/{identifier}/{action}')
+    async def download_action(identifier: str, action: str,
+                              x_debug_key: str | None = Header(None)):
+        authorize(x_debug_key)
+        if action not in ('pause', 'resume', 'delete'):
+            raise HTTPException(400, 'Unknown download action')
+        try:
+            await app.state.runtime.downloads.action(identifier, action)
+        except KeyError:
+            raise HTTPException(404, 'Download not found') from None
+        return {'downloads': app.state.runtime.downloads.listing()}
+
     @app.get('/api/search')
     async def search(
         q: str = Query('', max_length=500),

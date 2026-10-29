@@ -10,6 +10,7 @@ services:
       - "127.0.0.1:8001:8001"
     volumes:
       - telegram-data:/data
+      - ./telegram-downloads:/media/telegram-downloads:rw
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

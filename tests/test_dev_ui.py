@@ -190,3 +190,43 @@ const handler=HANDLER
 })().catch(error=>{console.error(error);process.exitCode=1});
 """.replace('HANDLER', handler)
     subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)
+
+
+def test_download_controls_follow_job_state_and_escape_metadata():
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('Node is required to execute the Developer UI JavaScript')
+    html = (Path(__file__).parents[1] / 'stremio_addon' / 'debug.html').read_text()
+    controls = 'function downloadControls(' + html.split('function downloadControls(', 1)[1].split('\nfunction renderSearchResults', 1)[0]
+    esc = 'const esc=' + html.split('const esc=', 1)[1].split('\nconst ingressUrl', 1)[0]
+    script = "const assert=require('node:assert/strict');\n" + esc + r'''
+const fmtBytes=n=>n+' B',busyDownloads=new Set();
+let downloadRows=[];
+''' + controls + r'''
+const source={id:'tg:1:"<script>'};
+let result=downloadControls(source);
+assert.ok(result.includes('Download</button>'));
+assert.ok(!result.includes('<script>'));
+const job={id:'job',source_id:source.id,status:'downloading',downloaded:5,size:10};
+downloadRows=[job];
+result=downloadControls(source);assert.ok(result.includes('Pause</button>'));
+assert.ok(result.includes('5 B / 10 B'));assert.ok(result.includes('Stop & delete'));
+job.status='paused';result=downloadControls(source);assert.ok(result.includes('Resume</button>'));
+job.status='failed';job.error='<script>error</script>';
+result=downloadControls(source);assert.ok(result.includes('Resume</button>'));
+assert.ok(!result.includes('<script>error'));
+job.status='completed';result=downloadControls(source);assert.ok(result.includes('Delete</button>'));
+assert.ok(!result.includes('Resume</button>'));assert.ok(!result.includes('Pause</button>'));
+job.status='downloading';busyDownloads.add('job');
+assert.ok(downloadControls(source).includes('disabled'));
+'''
+    subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)
+    search = html.split('<section id="search"', 1)[1].split('</section>', 1)[0]
+    saved = html.split('<section id="downloads"', 1)[1].split('</section>', 1)[0]
+    ai = html.split('<section id="ai"', 1)[1].split('</section>', 1)[0]
+    assert 'Streaming may slow down while downloads are in progress.' in search
+    assert 'debug Stremio / Nuvio search results' in search
+    assert 'ai-search-form' not in search
+    assert 'ai-search-form' in ai and 'gemini-exchange' in ai
+    assert 'search-form' not in saved
+    assert 'Select all' in saved and 'Clear selection' in saved and 'Search for videos' in saved

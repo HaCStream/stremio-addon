@@ -8,6 +8,7 @@ from .metadata import Metadata
 from .telegram import Telegram
 from .ai_search import AISearch
 from .tmdb import TMDB
+from .downloads import Downloads
 from .search import HybridSearch
 
 
@@ -38,7 +39,9 @@ class Runtime:
                 self.ai = AISearch(self.cfg, self.store) if self.cfg.ai_search_enabled else None
                 if self.ai:
                     self.ai.lookup = self.search.discover_titles
+                self.downloads = Downloads(self)
                 try:
+                    await self.downloads.start()
                     await self.tg.start()
                 except Exception:
                     if self.ai:
@@ -57,6 +60,7 @@ class Runtime:
         async with self.lock:
             self.users -= 1
             if not self.users:
+                await self.downloads.close()
                 if self.tmdb_task:
                     self.tmdb_task.cancel()
                     with suppress(asyncio.CancelledError):

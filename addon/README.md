@@ -89,3 +89,24 @@ Telegram cooldowns, and both pause during playback. Search traffic can consequen
 slow indexing. Catalogs and episode lists may be incomplete until indexing catches
 up, and a client that cached an older list may need to refresh it. No full-history
 series search is started when opening a show.
+
+## 💾 Local downloads
+
+In the Developer UI, **Search** includes download, pause, resume and stop/delete
+controls beside each video's caption, file name, group/channel and size.
+**Downloads** lists saved and unfinished files, supports selecting files for batch
+deletion, and links back to Search. AI search diagnostics are in **AI debug**.
+
+Videos are saved to Home Assistant's shared **`/media/telegram-downloads`**, not to
+your phone or browser. The add-on maps `/media` writable and its AppArmor profile
+allows writes to that subdirectory. Keep protection mode and AppArmor enabled.
+Use a separately configured file share to access files from another computer.
+
+There is no app-imposed concurrent-download limit. Telegram flood waits are
+respected, and downloads yield between chunks to playback. Streaming may still
+slow down while downloads are in progress. Files use `.part` until complete;
+**Stop & delete** removes the partial file. Closing the UI keeps downloads running.
+After restarting the add-on, unfinished jobs appear paused: **Resume** continues
+from the partial file. Low disk space or access errors show a failed status;
+fix the cause and resume. Keep the add-on data and media files to retain resume
+state. Only downloads created by this feature are managed by this screen.
