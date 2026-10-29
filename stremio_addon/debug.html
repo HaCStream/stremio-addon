@@ -199,8 +199,8 @@ document.querySelector('#search-form').onsubmit=async e=>{
   e.preventDefault();const button=e.submitter,summary=document.querySelector('#search-summary');button.disabled=true;summary.textContent='Searching…';
   try{
     const p=new URLSearchParams({q:document.querySelector('#query').value,mode:document.querySelector('#mode').value,kind:document.querySelector('#kind').value});
-    const d=await api('/api/search?'+p),byChannel=d.channels_queried.map(c=>`<li dir="auto">${esc(c.name)}: ${d.results_by_channel[c.id]||0}</li>`).join('');
-    summary.innerHTML=`<span class="pill">${d.result_count} results</span><span class="pill">${d.channels_queried.length} chats included</span><span class="pill">${d.duration_ms} ms</span><span class="pill">Normalized: ${esc(d.normalized_query)}</span>${actionButton('Show results by group','groups','id="toggle-group-results" aria-expanded="false" aria-controls="group-results"')}<div id="group-results" class="hidden group-results"><ul>${byChannel}</ul></div>`;
+    const d=await api('/api/search?'+p),byChannel=d.channels_queried.filter(c=>(d.results_by_channel[c.id]||0)>0).map(c=>`<li dir="auto">${esc(c.name)}: ${d.results_by_channel[c.id]||0}</li>`).join('');
+    summary.innerHTML=`${actionButton('Show results by group','groups','id="toggle-group-results" aria-expanded="false" aria-controls="group-results"')}<span class="pill">${d.result_count} results</span><span class="pill">${d.channels_queried.length} chats included</span><span class="pill">${d.duration_ms} ms</span><span class="pill">Normalized: ${esc(d.normalized_query)}</span><div id="group-results" class="hidden group-results"><ul>${byChannel}</ul></div>`;
     searchRows=d.results;await loadDownloads();renderSearchResults();
   }catch(err){summary.textContent=err.message}finally{button.disabled=false}
 };
