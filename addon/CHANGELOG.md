@@ -1,5 +1,16 @@
 # Changelog
 
+<!-- release:1.7.2:start -->
+## 1.7.2
+
+## What's Changed
+* Add search result sorting and size/group filters by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/63
+* Use original download names, check capacity and show deletion progress by @HaCStudio in https://github.com/HaCStream/stremio-addon/pull/64
+
+
+**Full Changelog**: https://github.com/HaCStream/stremio-addon/compare/v1.7.1...v1.7.2
+<!-- release:1.7.2:end -->
+
 <!-- release:1.7.1:start -->
 ## 1.7.1
 
