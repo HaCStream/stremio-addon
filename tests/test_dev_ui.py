@@ -200,7 +200,7 @@ def test_download_controls_follow_job_state_and_escape_metadata():
     controls = 'function actionIcon(' + html.split('function actionIcon(', 1)[1].split('\nfunction renderSearchResults', 1)[0]
     esc = 'const esc=' + html.split('const esc=', 1)[1].split('\nconst ingressUrl', 1)[0]
     script = "const assert=require('node:assert/strict');\n" + esc + r'''
-const fmtBytes=n=>n+' B',busyDownloads=new Set();
+const fmtBytes=n=>n+' B',busyDownloads=new Set(),pendingDeletions=new Map();
 let downloadRows=[];
 ''' + controls + r'''
 const source={id:'tg:1:"<script>'};
@@ -219,6 +219,8 @@ job.status='completed';result=downloadControls(source);assert.ok(result.includes
 assert.ok(!result.includes('aria-label="Resume"'));assert.ok(!result.includes('aria-label="Pause"'));
 job.status='downloading';busyDownloads.add('job');
 assert.ok(downloadControls(source).includes('disabled'));
+pendingDeletions.set('job',job);result=downloadControls(source);
+assert.ok(result.includes('deleting-icon'));assert.ok(result.includes('aria-busy="true"'));assert.ok(result.includes('Deleting video'));
 '''
     subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)
     search = html.split('<section id="search"', 1)[1].split('</section>', 1)[0]

@@ -487,12 +487,15 @@ Downloads have **no application-imposed concurrency limit**. Telegram flood wait
 pause new download requests for the requested delay. Downloads yield between chunks
 to playback (including its two-second grace period), but in-flight requests and
 shared bandwidth/disk I/O may still slow streaming. Continuous playback can delay
-completion. Free space is checked before each chunk; storage errors mark the job
-failed so it can be resumed after fixing the problem.
+completion. Before starting or resuming, available space is checked against the remaining
+file size and other active downloads. Insufficient space opens a popup and the
+download does not start. Free space is also checked before each chunk; storage
+errors mark the job failed so it can be resumed after fixing the problem.
 
 Partial files use `.part` and are renamed only after all bytes arrive. Job state
 is kept in the existing data volume; keep both that volume and the media mount
 across recreations. After a restart unfinished jobs are **paused**; click Resume
 to continue from disk, repeating at most one 512 KiB chunk. Closing the browser
-leaves active downloads running. Saved names include a unique prefix to avoid
-filename collisions; the original filename remains visible in the UI.
+leaves active downloads running. New downloads use the original filename, sanitized for filesystem safety. If a name
+is already in use, a numeric suffix is added, such as `video (1).mp4`. Existing
+downloads keep their saved names and remain resumable.

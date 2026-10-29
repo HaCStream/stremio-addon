@@ -15,6 +15,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from .ai_search import ai_query, GeminiCooldown, gemini_diagnostics
 from .core import normalize, source_name
 from .version import get_version
+from .downloads import InsufficientSpace
 
 
 logger = logging.getLogger(__name__)
@@ -249,6 +250,10 @@ def create_debug_app(runtime):
         authorize(x_debug_key)
         return {'downloads': app.state.runtime.downloads.listing()}
 
+    def space_error(exc):
+        return HTTPException(409, detail={'code': 'insufficient_space', 'message': str(exc),
+                                         'required_bytes': exc.required, 'available_bytes': exc.available})
+
     @app.post('/api/downloads', status_code=202)
     async def download_create(body: DownloadRequest, x_debug_key: str | None = Header(None)):
         authorize(x_debug_key)
@@ -258,6 +263,8 @@ def create_debug_app(runtime):
             raise HTTPException(404, 'Video is not available in the configured chats')
         try:
             identifier = await shared.downloads.create(row)
+        except InsufficientSpace as exc:
+            raise space_error(exc) from None
         except OSError:
             raise HTTPException(409, 'Download storage is not writable; check the media mount and permissions') from None
         return {'id': identifier}
@@ -281,6 +288,8 @@ def create_debug_app(runtime):
             raise HTTPException(400, 'Unknown download action')
         try:
             await app.state.runtime.downloads.action(identifier, action)
+        except InsufficientSpace as exc:
+            raise space_error(exc) from None
         except KeyError:
             raise HTTPException(404, 'Download not found') from None
         return {'downloads': app.state.runtime.downloads.listing()}
